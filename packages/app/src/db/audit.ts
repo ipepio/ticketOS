@@ -17,24 +17,27 @@ export class PostgresAudit {
     workspaceId: WorkspaceId | null,
     limit = 50,
   ): Promise<AuditEvent[]> {
-    const { rows } = workspaceId
-      ? await this.pool.query(
-          `SELECT id, kind, actor_user_id, workspace_id, details, created_at
-           FROM audit_events
-           WHERE workspace_id = $1
-           ORDER BY created_at DESC
-           LIMIT $2`,
-          [workspaceId, limit],
-        )
-      : await this.pool.query(
-          `SELECT id, kind, actor_user_id, workspace_id, details, created_at
-           FROM audit_events
-           ORDER BY created_at DESC
-           LIMIT $2`,
-          [limit],
-        );
+    let result;
+    if (workspaceId) {
+      result = await this.pool.query(
+        `SELECT id, kind, actor_user_id, workspace_id, details, created_at
+         FROM audit_events
+         WHERE workspace_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [workspaceId, limit],
+      );
+    } else {
+      result = await this.pool.query(
+        `SELECT id, kind, actor_user_id, workspace_id, details, created_at
+         FROM audit_events
+         ORDER BY created_at DESC
+         LIMIT $1`,
+        [limit],
+      );
+    }
 
-    return rows.map(
+    return result.rows.map(
       (r) =>
         ({
           id: r.id,
