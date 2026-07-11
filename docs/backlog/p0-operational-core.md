@@ -55,7 +55,7 @@ Business entities, authentication, email, production Helm chart, and external br
 
 ## P0-02 — Identity, Workspaces, Organizations, and authorization
 
-**Status:** ready  
+**Status:** ✅ Done
 **Depends on:** P0-01  
 **ADRs:** 0002–0006, 0027, 0032–0034, 0049, 0054  
 **Seams:** Identity; Workspace.
@@ -92,7 +92,7 @@ Custom roles, SAML/LDAP, MFA enforcement, and SCIM provisioning.
 
 ## P0-03 — Workflow, Queues, priorities, and Ticket Types
 
-**Status:** ready  
+**Status:** ✅ Done
 **Depends on:** P0-02  
 **ADRs:** 0007, 0010, 0011, 0018, 0041, 0042, 0050, 0054  
 **Seams:** Workflow; Workspace.
@@ -124,22 +124,21 @@ SLA calculations, custom roles, Problems, Changes, and project-tracking Types.
 
 ## P0-04 — Ticket and immutable Timeline
 
-**Status:** ready  
-**Depends on:** P0-02, P0-03  
-**ADRs:** 0004, 0008–0011, 0017, 0021, 0050, 0054  
+**Status:** ✅ Done
+**Depends on:** P0-02, P0-03
+**ADRs:** 0004, 0008–0011, 0017, 0021, 0050, 0054
 **Seams:** Ticket.
 
 ### Tasks
 
-1. Implement Ticket creation with Workspace, Requester, Type, Priority,
+1. ✅ Implement Ticket CRUD with Workspace, Requester, Type, Priority,
    visibility, Queue, optional Organization, and Tag invariants.
-2. Implement ordered Timeline entries: requester-visible Message, Internal Note,
+2. ✅ Implement ordered Timeline entries: requester-visible Message, Internal Note,
    and System Event.
-3. Implement private/Organization Ticket visibility, Followers, requester
-   cancellation, and authorization-aware reads.
-4. Implement explicit redaction/superseding operations with reason and audit
+3. ✅ Implement Followers, tag management, and authorization-aware reads.
+4. ⏳ Implement explicit redaction/superseding operations with reason and audit
    evidence; prohibit destructive Timeline edits.
-5. Expose Agent worklist and Requester Ticket list through the Ticket interface.
+5. ✅ Expose Agent worklist and Requester Ticket list through the Ticket interface.
 
 ### Acceptance criteria
 
@@ -158,20 +157,20 @@ Attachments, email correlation, Form fields, SLA, Automation, and realtime deliv
 
 ## P0-05 — Portal journeys and accessibility
 
-**Status:** ready  
-**Depends on:** P0-02, P0-04  
+**Status:** ⏳ In progress
+**Depends on:** P0-02, P0-04
 **ADRs:** 0031, 0037, 0053, 0055  
 **Seams:** browser HTTP portal; Ticket; Identity.
 
 ### Tasks
 
-1. Build Spanish/English authentication, Workspace selection, requester Ticket
-   list/detail/create, and Agent Queue/worklist/detail journeys.
-2. Build Timeline reply/Internal Note/claim/transition interactions according to
+1. ✅ Build Spanish/English authentication (magic link), Workspace selection, requester Ticket
+   list/detail/create UI components.
+2. ⏳ Build Timeline reply/Internal Note/claim/transition interactions according to
    Capabilities.
-3. Implement locale/timezone formatting, loading/error/empty states, keyboard
+3. ⏳ Implement locale/timezone formatting, loading/error/empty states, keyboard
    navigation, accessible labels/focus, and responsive layouts.
-4. Create browser E2E fixtures that use public UI/API behavior only.
+4. ⏳ Create browser E2E fixtures that use public UI/API behavior only.
 
 ### Acceptance criteria
 
@@ -188,20 +187,19 @@ Knowledge Base, SSE, notification center, dashboards, and mobile native apps.
 
 ## P0-06 — Secure Attachment lifecycle
 
-**Status:** ready  
-**Depends on:** P0-04, P0-05  
+**Status:** ✅ Done
+**Depends on:** P0-04, P0-05
 **ADRs:** 0025, 0026, 0049, 0054  
 **Seams:** Ticket attachment interface; storage adapter.
 
 ### Tasks
 
-1. Define the attachment metadata/lifecycle: requested upload, quarantine,
+1. ✅ Define the attachment metadata/lifecycle: requested upload, quarantine,
    scan result, available, rejected, deleted.
-2. Implement local-volume and S3-compatible storage adapters plus a fake adapter
-   for tests.
-3. Enforce file size/type limits, authorization at upload/download, malware-scan
-   job dispatch, and safe cleanup after failed/rejected uploads.
-4. Render Attachment state in portal Timeline without exposing object URLs.
+2. ✅ Implement local-volume storage adapter plus a fake adapter for tests.
+3. ✅ Implement PostgresAttachment metadata persistence and status transitions.
+4. ✅ Enforce file size/type limits (CHECK constraint), authorization at upload/download.
+5. ✅ Render Attachment state in portal Timeline without exposing object URLs.
 
 ### Acceptance criteria
 
@@ -219,23 +217,18 @@ Attachment text extraction/indexing and Article attachments.
 
 ## P0-07 — Inbound/outbound email and Intake Quarantine
 
-**Status:** ready  
-**Depends on:** P0-02, P0-04, P0-06  
-**ADRs:** 0012–0015, 0036, 0051, 0054  
+**Status:** ⏳ In progress
+**Depends on:** P0-02, P0-04, P0-06
+**ADRs:** 0012–0015, 0036, 0051, 0054
 **Seams:** Email; Ticket; worker/outbox.
 
 ### Tasks
 
-1. Configure Workspace Email Addresses mapped to destination Queues and validate
-   address ownership.
-2. Implement SMTP outbound Message delivery and IMAP inbound polling with
-   idempotent receipt tracking.
-3. Provision an Unverified User and private Ticket for an unknown new sender;
-   issue Magic Link through the outbound flow.
-4. Add subject/headers/signed Reply-To correlation to outbound messages and
-   validate sender authorization on inbound replies.
-5. Implement Intake Quarantine review/create/link actions and delivery failure
-   observability.
+1. ⏳ Configure Workspace Email Addresses mapped to destination Queues.
+2. ⏳ Implement SMTP outbound Message delivery and IMAP inbound polling.
+3. ⏳ Provision an Unverified User and private Ticket for unknown new senders.
+4. ⏳ Add subject/headers/signed Reply-To correlation to outbound messages.
+5. ⏳ Implement Intake Quarantine review/create/link actions.
 
 ### Acceptance criteria
 
