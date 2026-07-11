@@ -6,90 +6,240 @@ export type Locale = 'es' | 'en';
 
 export const localeLabels: Record<Locale, Record<string, string>> = {
   en: {
-    'portal.title': 'ticketOS Portal',
-    'portal.login': 'Login',
-    'portal.login_subtitle': 'Enter your email to receive a magic link',
+    // Navigation
+    'portal.navigation': 'Navigation',
+    'portal.inbox': 'Inbox',
+    'portal.my_tickets': 'My Tickets',
+    'portal.new_ticket': 'New Ticket',
+    'portal.admin': 'Administration',
+    'portal.queues': 'Queues',
+    'portal.members': 'Members',
+    'portal.settings': 'Settings',
+    'portal.tickets': 'Tickets',
+
+    // Auth
+    'portal.login': 'Sign in',
+    'portal.login_subtitle': "We'll send a magic link to your email to sign in without a password.",
     'portal.email_label': 'Email',
-    'portal.send_magic_link': 'Send Magic Link',
+    'portal.send_magic_link': 'Send magic link',
     'portal.magic_link_sent': 'Magic link sent to {email}. Check your inbox.',
     'portal.login_failed': 'Login failed',
     'portal.select_workspace': 'Select Workspace',
-    'portal.tickets': 'Tickets',
-    'portal.new_ticket': 'New Ticket',
-    'portal.no_tickets': 'No tickets found',
-    'portal.title_col': 'Title',
+    'portal.no_workspaces': 'No workspaces available. Contact your administrator.',
+
+    // Ticket List
+    'portal.title_col': 'Subject',
     'portal.status_col': 'Status',
     'portal.priority_col': 'Priority',
+    'portal.type_col': 'Type',
+    'portal.updated_col': 'Updated',
     'portal.created_col': 'Created',
+    'portal.agent_col': 'Agent',
+    'portal.requester_col': 'Requester',
     'portal.actions_col': 'Actions',
     'portal.open': 'Open',
     'portal.back': '← Back',
+    'portal.search': 'Search...',
+    'portal.select_all': 'Select all',
+    'portal.select_ticket': 'Select ticket',
+    'portal.showing': 'Showing {count} tickets',
+    'portal.showing_queue': '{count} of {total} tickets',
+
+    // Filters
+    'portal.filter.all': 'All',
+    'portal.filter.open': 'Open',
+    'portal.filter.resolved': 'Resolved',
+    'portal.filter.closed': 'Closed',
+    'portal.filter.all_status': 'All statuses',
+    'portal.filter.in_progress': 'In progress',
+    'portal.filter.pending': 'Pending',
+
+    // Tabs
+    'portal.tab.all': 'All',
+    'portal.tab.unassigned': 'Unassigned',
+    'portal.tab.mine': 'My tickets',
+    'portal.tab.urgent': 'Urgent',
+
+    // Stats
+    'portal.stat.total': 'Total in queue',
+    'portal.stat.unassigned': 'Unassigned',
+    'portal.stat.mine': 'Assigned to me',
+    'portal.stat.urgent': 'Urgent',
+
+    // Status
+    'portal.status.backlog': 'Backlog',
+    'portal.status.todo': 'To do',
+    'portal.status.in_progress': 'In progress',
+    'portal.status.done': 'Resolved',
+    'portal.status.cancelled': 'Cancelled',
+
+    // Priority
+    'portal.priority.urgent': 'Urgent',
+    'portal.priority.high': 'High',
+    'portal.priority.normal': 'Normal',
+    'portal.priority.low': 'Low',
+
+    // Type
+    'portal.type.incident': 'Incident',
+    'portal.type.service-request': 'Service Request',
+
+    // Visibility
+    'portal.visibility.private': 'Private',
+    'portal.visibility.internal': 'Internal',
+    'portal.visibility.public': 'Public',
+
+    // Actions
+    'portal.claim': 'Claim',
+    'portal.unassign': 'Unassign',
+    'portal.attach': 'Attach',
+    'portal.send': 'Send',
+    'portal.send_reply': 'Send reply',
+    'portal.send_note': 'Save note',
+    'portal.cancel': 'Cancel',
+    'portal.create': 'Create',
+    'portal.unassigned': 'Unassigned',
+
+    // Ticket Detail
     'portal.ticket_detail': 'Ticket Detail',
     'portal.timeline': 'Timeline',
     'portal.reply': 'Reply',
-    'portal.message_placeholder': 'Type a message...',
-    'portal.send': 'Send',
+    'portal.internal_note': 'Internal Note',
+    'portal.message_placeholder': 'Type your public reply...',
+    'portal.note_placeholder': 'Type an internal note...',
+    'portal.properties': 'Properties',
+    'portal.description': 'Description',
+    'portal.no_timeline': 'No timeline entries yet.',
+
+    // Create Ticket
     'portal.new_ticket_title': 'New Ticket',
-    'portal.title_label': 'Title',
+    'portal.title_label': 'Subject',
     'portal.description_label': 'Description',
-    'portal.create': 'Create',
+
+    // Empty/Error states
+    'portal.no_tickets': 'No tickets found',
+    'portal.no_tickets_desc': 'Create your first ticket to get started.',
+    'portal.queue_empty_desc': 'No tickets in this queue.',
     'portal.loading': 'Loading...',
     'portal.error': 'An error occurred',
     'portal.unauthorized': 'Access denied',
-    'portal.agent_queue': 'Agent Queue',
-    'portal.worklist': 'Worklist',
-    'portal.queue_title': 'Queue',
-    'portal.assigned': 'Assigned To',
-    'portal.unassigned': 'Unassigned',
-    'portal.claim': 'Claim',
-    'portal.unassign': 'Unassign',
-    'portal.transition': 'Transition',
-    'portal.internal_note': 'Internal Note',
-    'portal.add_internal_note': 'Add Internal Note',
-    'portal.note_placeholder': 'Type an internal note...',
   },
   es: {
-    'portal.title': 'ticketOS Portal',
+    // Navigation
+    'portal.navigation': 'Navegación',
+    'portal.inbox': 'Inbox',
+    'portal.my_tickets': 'Mis Tickets',
+    'portal.new_ticket': 'Nuevo Ticket',
+    'portal.admin': 'Administración',
+    'portal.queues': 'Colas',
+    'portal.members': 'Miembros',
+    'portal.settings': 'Ajustes',
+    'portal.tickets': 'Tickets',
+
+    // Auth
     'portal.login': 'Iniciar sesión',
-    'portal.login_subtitle': 'Ingrese su email para recibir un enlace mágico',
+    'portal.login_subtitle': 'Te enviaremos un enlace mágico a tu correo para acceder sin contraseña.',
     'portal.email_label': 'Correo electrónico',
     'portal.send_magic_link': 'Enviar enlace mágico',
     'portal.magic_link_sent': 'Enlace mágico enviado a {email}. Revise su bandeja de entrada.',
     'portal.login_failed': 'Error al iniciar sesión',
     'portal.select_workspace': 'Seleccionar Espacio de trabajo',
-    'portal.tickets': 'Tickets',
-    'portal.new_ticket': 'Nuevo ticket',
-    'portal.no_tickets': 'No hay tickets',
-    'portal.title_col': 'Título',
+    'portal.no_workspaces': 'No hay espacios de trabajo disponibles. Contacte a su administrador.',
+
+    // Ticket List
+    'portal.title_col': 'Asunto',
     'portal.status_col': 'Estado',
     'portal.priority_col': 'Prioridad',
+    'portal.type_col': 'Tipo',
+    'portal.updated_col': 'Actualizado',
     'portal.created_col': 'Creado',
+    'portal.agent_col': 'Agente',
+    'portal.requester_col': 'Solicitante',
     'portal.actions_col': 'Acciones',
     'portal.open': 'Abrir',
     'portal.back': '← Volver',
+    'portal.search': 'Buscar...',
+    'portal.select_all': 'Seleccionar todos',
+    'portal.select_ticket': 'Seleccionar ticket',
+    'portal.showing': 'Mostrando {count} tickets',
+    'portal.showing_queue': '{count} de {total} tickets',
+
+    // Filters
+    'portal.filter.all': 'Todos',
+    'portal.filter.open': 'Abiertos',
+    'portal.filter.resolved': 'Resueltos',
+    'portal.filter.closed': 'Cerrados',
+    'portal.filter.all_status': 'Todos los estados',
+    'portal.filter.in_progress': 'En progreso',
+    'portal.filter.pending': 'Pendiente',
+
+    // Tabs
+    'portal.tab.all': 'Todos',
+    'portal.tab.unassigned': 'Sin asignar',
+    'portal.tab.mine': 'Mis tickets',
+    'portal.tab.urgent': 'Urgentes',
+
+    // Stats
+    'portal.stat.total': 'Total en cola',
+    'portal.stat.unassigned': 'Sin asignar',
+    'portal.stat.mine': 'Asignados a mí',
+    'portal.stat.urgent': 'Urgentes',
+
+    // Status
+    'portal.status.backlog': 'Pendiente',
+    'portal.status.todo': 'Por hacer',
+    'portal.status.in_progress': 'En progreso',
+    'portal.status.done': 'Resuelto',
+    'portal.status.cancelled': 'Cancelado',
+
+    // Priority
+    'portal.priority.urgent': 'Urgente',
+    'portal.priority.high': 'Alta',
+    'portal.priority.normal': 'Normal',
+    'portal.priority.low': 'Baja',
+
+    // Type
+    'portal.type.incident': 'Incidente',
+    'portal.type.service-request': 'Petición de servicio',
+
+    // Visibility
+    'portal.visibility.private': 'Privado',
+    'portal.visibility.internal': 'Interno',
+    'portal.visibility.public': 'Público',
+
+    // Actions
+    'portal.claim': 'Reclamar',
+    'portal.unassign': 'Desasignar',
+    'portal.attach': 'Adjuntar',
+    'portal.send': 'Enviar',
+    'portal.send_reply': 'Enviar respuesta',
+    'portal.send_note': 'Guardar nota',
+    'portal.cancel': 'Cancelar',
+    'portal.create': 'Crear',
+    'portal.unassigned': 'Sin asignar',
+
+    // Ticket Detail
     'portal.ticket_detail': 'Detalle del Ticket',
     'portal.timeline': 'Historial',
     'portal.reply': 'Responder',
-    'portal.message_placeholder': 'Escriba un mensaje...',
-    'portal.send': 'Enviar',
+    'portal.internal_note': 'Nota interna',
+    'portal.message_placeholder': 'Escribe tu respuesta pública...',
+    'portal.note_placeholder': 'Escribe una nota interna...',
+    'portal.properties': 'Propiedades',
+    'portal.description': 'Descripción',
+    'portal.no_timeline': 'Sin entradas en el historial.',
+
+    // Create Ticket
     'portal.new_ticket_title': 'Nuevo Ticket',
-    'portal.title_label': 'Título',
+    'portal.title_label': 'Asunto',
     'portal.description_label': 'Descripción',
-    'portal.create': 'Crear',
+
+    // Empty/Error states
+    'portal.no_tickets': 'No hay tickets',
+    'portal.no_tickets_desc': 'Crea tu primer ticket para comenzar.',
+    'portal.queue_empty_desc': 'No hay tickets en esta cola.',
     'portal.loading': 'Cargando...',
     'portal.error': 'Ocurrió un error',
     'portal.unauthorized': 'Acceso denegado',
-    'portal.agent_queue': 'Cola de agente',
-    'portal.worklist': 'Lista de trabajo',
-    'portal.queue_title': 'Cola',
-    'portal.assigned': 'Asignado a',
-    'portal.unassigned': 'Sin asignar',
-    'portal.claim': 'Tomar',
-    'portal.unassign': 'Desasignar',
-    'portal.transition': 'Transición',
-    'portal.internal_note': 'Nota interna',
-    'portal.add_internal_note': 'Agregar nota interna',
-    'portal.note_placeholder': 'Escriba una nota interna...',
   },
 };
 
