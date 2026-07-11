@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Pool } from 'pg';
-import { PostgresOutbox } from './outbox';
+import { PostgresOutbox } from './outbox.js';
 import type { OutboxEvent, DomainEvent } from '@ticketos/domain';
 
 const MIGRATION_SQL = `
@@ -35,7 +35,7 @@ describe('PostgresOutbox', () => {
     // Ensure schema exists
     await pool.query(MIGRATION_SQL);
     // Clean slate
-    await pool.query('TRUNCATE outbox_events RESTART IDENTITY');
+    await pool.query('DELETE FROM outbox_events');
   });
 
   afterEach(async () => {
@@ -127,7 +127,7 @@ describe('PostgresOutbox', () => {
     }
 
     const available = await outbox.fetchAvailable();
-    expect(available).toHaveLength(3);
+    expect(available.length).toBe(3);
     expect(available[0]!.aggregateId).toBe('a');
     expect(available[1]!.aggregateId).toBe('b');
     expect(available[2]!.aggregateId).toBe('c');

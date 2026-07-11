@@ -5,6 +5,8 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerRootRoute } from './routes/root.js';
 import { PostgresOutbox } from './db/outbox.js';
 import { PostgresAudit } from './db/audit.js';
+import { PostgresIdentity } from './identity/postgres.js';
+import { PostgresWorkspace } from './workspace/postgres.js';
 import type { OutboxModule, AuditModule } from '@ticketos/domain';
 import fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
@@ -20,6 +22,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let outbox: OutboxModule | null = null;
 let audit: AuditModule | null = null;
+let identity: PostgresIdentity | null = null;
+let workspace: PostgresWorkspace | null = null;
 
 export function getOutbox(): OutboxModule {
   if (!outbox) {
@@ -35,6 +39,20 @@ export function getAudit(): AuditModule {
   return audit;
 }
 
+export function getIdentity(): PostgresIdentity {
+  if (!identity) {
+    throw new Error('Identity not initialized. Call initApp() first.');
+  }
+  return identity;
+}
+
+export function getWorkspace(): PostgresWorkspace {
+  if (!workspace) {
+    throw new Error('Workspace not initialized. Call initApp() first.');
+  }
+  return workspace;
+}
+
 export async function initApp(config: Config): Promise<{
   app: FastifyInstance;
 }> {
@@ -42,9 +60,11 @@ export async function initApp(config: Config): Promise<{
   await initDb(config);
   await migrate(getPool());
 
-  // Initialize domain modules (outbox, audit)
+  // Initialize domain modules
   outbox = new PostgresOutbox(getPool());
   audit = new PostgresAudit(getPool());
+  identity = new PostgresIdentity(getPool(), outbox, audit);
+  workspace = new PostgresWorkspace(getPool());
 
   // Create Fastify instance
   const app = fastify({

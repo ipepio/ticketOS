@@ -34,12 +34,38 @@ export interface WorkspaceMembership {
   capabilities: Capability[];
 }
 
+export interface MagicLinkResult {
+  /** The magic link token (caller sends via email) */
+  token: string;
+}
+
+export interface AddQueueMemberInput {
+  workspaceId: WorkspaceId;
+  queueId: QueueId;
+  userId: UserId;
+}
+
 export interface IdentityModule {
   /**
    * Authenticate via magic-link token or OIDC.
    * Returns user identity and optionally an active workspace context.
    */
   authenticate(token: string): Promise<AuthenticateResult | null>;
+
+  /**
+   * Request a magic link for an email address. Creates an unverified user
+   * if none exists. Returns the generated token (caller sends via email).
+   */
+  requestMagicLink(
+    email: string,
+    workspaceId: WorkspaceId,
+  ): Promise<MagicLinkResult>;
+
+  /**
+   * Verify a magic-link token. Returns authenticated user or null if
+   * the token is expired, already used, or invalid.
+   */
+  verifyMagicLink(token: string): Promise<AuthenticateResult | null>;
 
   /**
    * Check if a user has a specific capability in a workspace.
@@ -67,6 +93,25 @@ export interface IdentityModule {
    * Get all capabilities for a user in a workspace.
    */
   getCapabilities(userId: UserId, workspaceId: WorkspaceId): Promise<Capability[]>;
+
+  /**
+   * Link an OIDC account to a user.
+   */
+  linkOidcAccount(
+    userId: UserId,
+    issuer: string,
+    subject: string,
+    email?: string,
+  ): Promise<void>;
+
+  /**
+   * Authenticate via OIDC provider and subject.
+   * Creates or links user account as needed.
+   */
+  authenticateOidc(
+    issuer: string,
+    subject: string,
+  ): Promise<AuthenticateResult | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,16 +155,32 @@ export interface CreateQueueInput {
   accessMode?: 'open' | 'restricted';
 }
 
+export interface AddQueueMemberInput {
+  workspaceId: WorkspaceId;
+  queueId: QueueId;
+  userId: UserId;
+}
+
 export interface WorkspaceModule {
   createWorkspace(input: CreateWorkspaceInput): Promise<Workspace>;
   getWorkspace(id: WorkspaceId): Promise<Workspace | null>;
 
   createOrganization(input: CreateOrganizationInput): Promise<Organization>;
   getOrganizations(workspaceId: WorkspaceId): Promise<Organization[]>;
+  getOrganization(id: string): Promise<Organization | null>;
 
   createQueue(input: CreateQueueInput): Promise<Queue>;
   getQueue(id: QueueId): Promise<Queue | null>;
   getQueues(workspaceId: WorkspaceId): Promise<Queue[]>;
+
+  addQueueMember(input: AddQueueMemberInput): Promise<void>;
+  removeQueueMember(workspaceId: WorkspaceId, queueId: QueueId, userId: UserId): Promise<void>;
+  getQueueMembers(queueId: QueueId): Promise<UserId[]>;
+
+  /**
+   * Check if a user is a member of a queue (for restricted queues).
+   */
+  isQueueMember(queueId: QueueId, userId: UserId): Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------
