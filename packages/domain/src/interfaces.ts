@@ -254,7 +254,119 @@ export interface AuditModule {
 
 // ---------------------------------------------------------------------------
 // Placeholder interfaces for future P0 modules
-// (Ticket, Workflow, Storage, Email)
+// (Workflow, Storage, Email)
 // ---------------------------------------------------------------------------
 
 // These are defined in their respective module test files and implementation.
+
+// ---------------------------------------------------------------------------
+// Ticket module seam (P0-04)
+// ---------------------------------------------------------------------------
+
+export type TicketStatus = 'backlog' | 'todo' | 'in_progress' | 'done' | 'cancelled';
+export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type TicketVisibility = 'public' | 'internal' | 'private';
+
+export interface Ticket {
+  id: string;
+  workspaceId: WorkspaceId;
+  title: string;
+  description: string | null;
+  status: TicketStatus;
+  priority: TicketPriority;
+  ticketTypeId: string | null;
+  createdBy: UserId;
+  assignedTo: UserId | null;
+  visibility: TicketVisibility;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTicketInput {
+  workspaceId: WorkspaceId;
+  title: string;
+  description?: string | null;
+  priority?: TicketPriority;
+  ticketTypeId?: string | null;
+  createdBy: UserId;
+  assignedTo?: UserId | null;
+  visibility?: TicketVisibility;
+}
+
+export interface UpdateTicketInput {
+  id: string;
+  title?: string;
+  description?: string | null;
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  ticketTypeId?: string | null;
+  assignedTo?: UserId | null;
+  visibility?: TicketVisibility;
+}
+
+export interface TicketTag {
+  id: string;
+  ticketId: string;
+  name: string;
+}
+
+export interface TicketFollower {
+  id: string;
+  ticketId: string;
+  userId: UserId;
+}
+
+export type TimelineEntryKind = 'message' | 'internal_note' | 'system_event' | 'status_change' | 'priority_change' | 'assignment_change';
+
+export interface TimelineEntry {
+  id: string;
+  ticketId: string;
+  kind: TimelineEntryKind;
+  content: string;
+  authorId: UserId | null;
+  visibility: TicketVisibility;
+  createdAt: string;
+}
+
+export interface TicketModule {
+  createTicket(input: CreateTicketInput): Promise<Ticket>;
+  getTicket(id: string): Promise<Ticket | null>;
+  updateTicket(input: UpdateTicketInput): Promise<Ticket>;
+  deleteTicket(id: string): Promise<void>;
+  listTickets(workspaceId: WorkspaceId, filters?: {
+    status?: TicketStatus;
+    priority?: TicketPriority;
+    assignedTo?: UserId | null;
+    createdBy?: UserId;
+    tags?: string[];
+  }): Promise<Ticket[]>;
+
+  addTag(ticketId: string, name: string): Promise<TicketTag>;
+  removeTag(ticketId: string, tagId: string): Promise<void>;
+  getTags(ticketId: string): Promise<TicketTag[]>;
+
+  addFollower(ticketId: string, userId: UserId): Promise<TicketFollower>;
+  removeFollower(ticketId: string, userId: UserId): Promise<void>;
+  getFollowers(ticketId: string): Promise<TicketFollower[]>;
+
+  appendTimelineEntry(entry: Omit<TimelineEntry, 'id' | 'createdAt'>): Promise<TimelineEntry>;
+  getTimeline(ticketId: string, options?: {
+    kind?: TimelineEntryKind;
+    visibility?: TicketVisibility;
+    limit?: number;
+  }): Promise<TimelineEntry[]>;
+
+  /**
+   * Redact a Timeline entry: replaces content with a reason,
+   * creates an auditable history record, and removes the
+   * redacted content from normal reads.
+   */
+  redactTimelineEntry(entryId: string, reason: string, authorId: UserId): Promise<TimelineEntry>;
+
+  /**
+   * Cancel a ticket. Only the ticket creator (Requester) can cancel
+   * their own eligible Service Request. Cancellation is terminal —
+   * the ticket status becomes 'cancelled' and cannot be transitioned.
+   */
+  cancelTicket(ticketId: string, userId: UserId): Promise<Ticket>;
+}

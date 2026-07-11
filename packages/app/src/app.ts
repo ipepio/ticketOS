@@ -1,13 +1,15 @@
 import type { Config } from './config.js';
 import { initDb, closeDb, getPool } from './db/connection.js';
 import { migrate } from './db/migrate.js';
-import { registerHealthRoutes } from './routes/health.js';
+import { registerAuthRoutes, registerTicketRoutes } from './routes/index.js';
 import { registerRootRoute } from './routes/root.js';
+import { registerHealthRoutes } from './routes/health.js';
 import { PostgresOutbox } from './db/outbox.js';
 import { PostgresAudit } from './db/audit.js';
 import { PostgresIdentity } from './identity/postgres.js';
 import { PostgresWorkspace } from './workspace/postgres.js';
 import { PostgresWorkflow } from './workflow/postgres.js';
+import { PostgresTicket } from './ticket/postgres.js';
 import type { OutboxModule, AuditModule } from '@ticketos/domain';
 import fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
@@ -26,6 +28,14 @@ let audit: AuditModule | null = null;
 let identity: PostgresIdentity | null = null;
 let workspace: PostgresWorkspace | null = null;
 let workflow: PostgresWorkflow | null = null;
+let ticket: PostgresTicket | null = null;
+
+export function getTicket(): PostgresTicket {
+  if (!ticket) {
+    throw new Error('Ticket not initialized. Call initApp() first.');
+  }
+  return ticket;
+}
 
 export function getOutbox(): OutboxModule {
   if (!outbox) {
@@ -75,6 +85,7 @@ export async function initApp(config: Config): Promise<{
   identity = new PostgresIdentity(getPool(), outbox, audit);
   workspace = new PostgresWorkspace(getPool());
   workflow = new PostgresWorkflow(getPool());
+  ticket = new PostgresTicket(getPool());
 
   // Create Fastify instance
   const app = fastify({
@@ -108,6 +119,10 @@ export async function initApp(config: Config): Promise<{
   // Register routes
   await app.register(registerRootRoute);
   await app.register(registerHealthRoutes);
+  await app.register(async (fastify) => {
+    await registerAuthRoutes(fastify, config);
+    await registerTicketRoutes(fastify, config);
+  });
 
   // Serve built portal (if exists)
   const portalDist = join(__dirname, '../../../../portal/dist');
