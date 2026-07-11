@@ -15,13 +15,13 @@ story until every linked item's criteria pass through its stated seam.
 | Item | Title | Status | Depends On |
 |------|-------|--------|------------|
 | P0-01 | Repository, runtime, database, and self-hosted baseline | ✅ Done | none |
-| P0-02 | Identity, Workspaces, Organizations, and authorization | 📋 Ready | P0-01 |
-| P0-03 | Workflow, Queues, priorities, and Ticket Types | 📋 Ready | P0-02 |
-| P0-04 | Ticket and immutable Timeline | 📋 Ready | P0-02, P0-03 |
-| P0-05 | Portal journeys and accessibility | 📋 Ready | P0-02, P0-04 |
-| P0-06 | Secure Attachment lifecycle | 📋 Ready | P0-04, P0-05 |
-| P0-07 | Inbound/outbound email and Intake Quarantine | 📋 Ready | P0-02, P0-04, P0-06 |
-| P0-08 | Audit, operations, recovery, and release evidence | 📋 Ready | P0-01 through P0-07 |
+| P0-02 | Identity, Workspaces, Organizations, and authorization | ✅ Done | P0-01 |
+| P0-03 | Workflow, Queues, priorities, and Ticket Types | ✅ Done | P0-02 |
+| P0-04 | Ticket and immutable Timeline | ✅ Done | P0-02, P0-03 |
+| P0-05 | Portal journeys and accessibility | ✅ Done | P0-02, P0-04 |
+| P0-06 | Secure Attachment lifecycle | ✅ Done | P0-04, P0-05 |
+| P0-07 | Inbound/outbound email and Intake Quarantine | ✅ Done | P0-02, P0-04, P0-06 |
+| P0-08 | Audit, operations, recovery, and release evidence | ✅ Done | P0-01 through P0-07 |
 | P1-01 | Business Calendars and SLA | 📋 Ready | P0-03, P0-04, P0-08 |
 | P1-02 | Versioned Forms and configurable Ticket Types | 📋 Ready | P0-03, P0-04 |
 | P1-03 | Automation Rules | 📋 Ready | P0-04, P1-01 |
@@ -47,20 +47,20 @@ story until every linked item's criteria pass through its stated seam.
 | US-04 | Magic-link and OIDC sign-in | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
 | US-05 | Fixed roles backed by Capabilities | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
 | US-06 | Group Requesters in Organizations | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
-| US-07 | Create portal Ticket | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | 📋 pending |
-| US-08 | Create email Ticket | P0-07 | P0-07 acceptance criteria | 📋 pending |
-| US-09 | Route inbound mail to Queue | P0-07 | P0-07 acceptance criteria | 📋 pending |
-| US-10 | Claim Ticket as Assignee | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 | 📋 pending |
-| US-11 | Move Queue/Status | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 | 📋 pending |
-| US-12 | Read requester-visible Messages | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | 📋 pending |
-| US-13 | Write Internal Notes | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | 📋 pending |
-| US-14 | Understand chronological Timeline | P0-04 | P0-04 acceptance criteria | 📋 pending |
-| US-15 | Restrict confidential Queues | P0-02, P0-03 | P0-02/P0-03 acceptance criteria | 📋 pending |
-| US-16 | Private/Organization visibility | P0-04 | P0-04 acceptance criteria | 📋 pending |
-| US-17 | Configure Statuses, Priorities, Types | P0-03; P1-02 | P0-03; P1-02 | 📋 pending |
-| US-18 | Secure Attachments | P0-06 | P0-06 acceptance criteria | 📋 pending |
-| US-19 | Quarantine unsafe inbound email | P0-07 | P0-07 acceptance criteria | 📋 pending |
-| US-20 | RLS and authorization audit | P0-02, P0-08 | P0-02/P0-08 acceptance criteria | 📋 pending |
+| US-07 | Create portal Ticket | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | ✅ P0-04/P0-05 done |
+| US-08 | Create email Ticket | P0-07 | P0-07 acceptance criteria | ✅ P0-07 done |
+| US-09 | Route inbound mail to Queue | P0-07 | P0-07 acceptance criteria | ✅ P0-07 done |
+| US-10 | Claim Ticket as Assignee | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 | ✅ P0-03/P0-04/P0-05 done |
+| US-11 | Move Queue/Status | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 | ✅ P0-03/P0-04/P0-05 done |
+| US-12 | Read requester-visible Messages | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | ✅ P0-04/P0-05 done |
+| US-13 | Write Internal Notes | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | ✅ P0-04/P0-05 done |
+| US-14 | Understand chronological Timeline | P0-04 | P0-04 acceptance criteria | ✅ P0-04 done |
+| US-15 | Restrict confidential Queues | P0-02, P0-03 | P0-02/P0-03 acceptance criteria | ✅ P0-02/P0-03 done |
+| US-16 | Private/Organization visibility | P0-04 | P0-04 acceptance criteria | ✅ P0-04 done |
+| US-17 | Configure Statuses, Priorities, Types | P0-03; P1-02 | P0-03; P1-02 | ✅ P0-03 done |
+| US-18 | Secure Attachments | P0-06 | P0-06 acceptance criteria | ✅ P0-06 done |
+| US-19 | Quarantine unsafe inbound email | P0-07 | P0-07 acceptance criteria | ✅ P0-07 done |
+| US-20 | RLS and authorization audit | P0-02, P0-08 | P0-02/P0-08 acceptance criteria | ✅ P0-02/P0-08 done |
 | US-21 | Business Calendars and SLA Policies | P1-01 | P1-01 acceptance criteria | 📋 pending |
 | US-22 | SLA risk/breach visibility | P1-01, P1-05 | P1-01/P1-05 acceptance criteria | 📋 pending |
 | US-23 | Versioned Ticket Forms | P1-02 | P1-02 acceptance criteria | 📋 pending |
@@ -73,8 +73,8 @@ story until every linked item's criteria pass through its stated seam.
 | US-30 | Auditable Approvals | P2-02 | P2-02 acceptance criteria | 📋 pending |
 | US-31 | Configurable reports/exports | P2-03 | P2-03 acceptance criteria | 📋 pending |
 | US-32 | Retention Policies and Legal Holds | P2-04 | P2-04 acceptance criteria | 📋 pending |
-| US-33 | Backup, restore, upgrade | P0-01, P0-08 | P0-01/P0-08 acceptance criteria | ✅ P0-01 done |
-| US-34 | Spanish/English experience | P0-05, P1-05 | P0-05/P1-05 acceptance criteria | 📋 pending |
+| US-33 | Backup, restore, upgrade | P0-01, P0-08 | P0-01/P0-08 acceptance criteria | ✅ P0-01/P0-08 done |
+| US-34 | Spanish/English experience | P0-05, P1-05 | P0-05/P1-05 acceptance criteria | ✅ P0-05 done |
 
 ## Coverage rules
 
