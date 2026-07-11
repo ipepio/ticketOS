@@ -1,10 +1,9 @@
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 import type {
   WorkspaceModule,
   Workspace,
   Organization,
   Queue,
-  DomainEvent,
   AddQueueMemberInput,
 } from '@ticketos/domain';
 import type { WorkspaceId, QueueId, UserId } from '@ticketos/shared';

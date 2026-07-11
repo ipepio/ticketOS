@@ -1,21 +1,18 @@
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 import crypto from 'node:crypto';
 import type {
   IdentityModule,
   AuthenticateResult,
   MagicLinkResult,
   WorkspaceMembership,
-  DomainEvent,
   OutboxModule,
   AuditModule,
-  AuditEvent,
 } from '@ticketos/domain';
 import type {
   UserId,
   WorkspaceId,
   Capability,
   Role,
-  MembershipId,
 } from '@ticketos/shared';
 
 const CAPABILITY_MAP: Record<Role, Capability[]> = {
@@ -81,8 +78,6 @@ export class PostgresIdentity implements IdentityModule {
     email: string,
     workspaceId: WorkspaceId,
   ): Promise<MagicLinkResult> {
-    let userId: string;
-
     // Upsert user
     const { rows } = await this.pool.query(
       `INSERT INTO users (email, verified_at)
@@ -91,7 +86,7 @@ export class PostgresIdentity implements IdentityModule {
        RETURNING id`,
       [email],
     );
-    userId = rows[0]!.id;
+    const userId = rows[0]!.id;
 
     // Generate token
     const token = crypto.randomBytes(32).toString('hex');
@@ -270,5 +265,58 @@ export class PostgresIdentity implements IdentityModule {
     if (rows.length === 0) return null;
 
     return { userId: rows[0]!.user_id };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session management
+  // ---------------------------------------------------------------------------
+
+  async createSession(
+    userId: UserId,
+    workspaceId: WorkspaceId | null,
+    data: Record<string, unknown> = {},
+  ): Promise<string> {
+    const sessionId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+
+    await this.pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, data, expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [sessionId, userId, workspaceId, JSON.stringify(data), expiresAt],
+    );
+
+    return sessionId;
+  }
+
+  async getSession(sessionId: string): Promise<{
+    userId: UserId;
+    workspaceId: WorkspaceId | null;
+    data: Record<string, unknown>;
+    expiresAt: string;
+  } | null> {
+    const { rows } = await this.pool.query(
+      `SELECT user_id, workspace_id, data, expires_at
+       FROM sessions
+       WHERE id = $1 AND expires_at > NOW()`,
+      [sessionId],
+    );
+
+    if (rows.length === 0) return null;
+
+    const r = rows[0]!;
+    return {
+      userId: r.user_id,
+      workspaceId: r.workspace_id,
+      data: r.data as Record<string, unknown>,
+      expiresAt: r.expires_at,
+    };
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.pool.query('DELETE FROM sessions WHERE id = $1', [sessionId]);
+  }
+
+  async deleteAllUserSessions(userId: UserId): Promise<void> {
+    await this.pool.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
   }
 }

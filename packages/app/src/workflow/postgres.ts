@@ -1,6 +1,5 @@
-import { Pool } from 'pg';
-import type { DomainEvent, AuditModule } from '@ticketos/domain';
-import type { WorkspaceId, QueueId } from '@ticketos/shared';
+import type { Pool } from 'pg';
+import type { WorkspaceId } from '@ticketos/shared';
 
 interface StatusRow {
   id: string;

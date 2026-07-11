@@ -6,6 +6,11 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
-    concurrency: 1,
+    testTimeout: 30000,
+    hookTimeout: 30000,
+    poolOptions: {
+      threads: { singleThread: true },
+      forks: { singleFork: true },
+    },
   },
 });

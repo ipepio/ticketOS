@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import type { AuditEvent } from '@ticketos/domain';
-import type { UserId, WorkspaceId, AuditEventKind } from '@ticketos/shared';
+import type { WorkspaceId, AuditEventKind } from '@ticketos/shared';
 
 export class PostgresAudit {
   constructor(private pool: Pool) {}

@@ -3,7 +3,6 @@ import { Pool } from 'pg';
 import { PostgresWorkflow } from './postgres.js';
 import { PostgresWorkspace } from '../workspace/postgres.js';
 import { PostgresAudit } from '../db/audit.js';
-import type { AuditEvent, DomainEvent } from '@ticketos/domain';
 
 const MIGRATIONS = [
   // Workspace tables (from P0-02)
@@ -110,7 +109,7 @@ const MIGRATIONS = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(workspace_id, name)
   )`,
-  `CREATE TABLE IF NOT EXISTS ticket_tags (
+  `CREATE TABLE IF NOT EXISTS workspace_ticket_tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -129,7 +128,6 @@ describe('Workflow', () => {
   let workflow: PostgresWorkflow;
   let workspace: PostgresWorkspace;
   let audit: PostgresAudit;
-  let wsId: string;
 
   beforeEach(async () => {
     pool = createTestPool();
@@ -140,7 +138,7 @@ describe('Workflow', () => {
     await pool.query('DELETE FROM transitions');
     await pool.query('DELETE FROM statuses');
     await pool.query('DELETE FROM ticket_types');
-    await pool.query('DELETE FROM ticket_tags');
+    await pool.query('DELETE FROM workspace_ticket_tags');
     await pool.query('DELETE FROM priorities');
     await pool.query('DELETE FROM queues');
     await pool.query('DELETE FROM organizations');
@@ -153,7 +151,7 @@ describe('Workflow', () => {
       'INSERT INTO workspaces (id, name) VALUES ($1, $2) RETURNING id',
       [crypto.randomUUID(), 'Workflow Test'],
     );
-    wsId = wsRows[0]!.id;
+    void wsRows;
 
     audit = new PostgresAudit(pool);
     workflow = new PostgresWorkflow(pool);
