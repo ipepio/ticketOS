@@ -157,7 +157,7 @@ Attachments, email correlation, Form fields, SLA, Automation, and realtime deliv
 
 ## P0-05 — Portal journeys and accessibility
 
-**Status:** ⏳ In progress
+**Status:** ✅ Done
 **Depends on:** P0-02, P0-04
 **ADRs:** 0031, 0037, 0053, 0055  
 **Seams:** browser HTTP portal; Ticket; Identity.
@@ -217,7 +217,7 @@ Attachment text extraction/indexing and Article attachments.
 
 ## P0-07 — Inbound/outbound email and Intake Quarantine
 
-**Status:** ⏳ In progress
+**Status:** ✅ Done
 **Depends on:** P0-02, P0-04, P0-06
 **ADRs:** 0012–0015, 0036, 0051, 0054
 **Seams:** Email; Ticket; worker/outbox.
@@ -247,7 +247,7 @@ Provider webhooks, bounce/complaint automation, chat, WhatsApp, and social adapt
 
 ## P0-08 — Audit, operations, recovery, and release evidence
 
-**Status:** ready  
+**Status:** ✅ Done  
 **Depends on:** P0-01 through P0-07  
 **ADRs:** 0026, 0027, 0038, 0052–0055  
 **Seams:** Audit; observability export; deployment/recovery interface.
