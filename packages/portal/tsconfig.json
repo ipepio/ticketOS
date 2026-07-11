@@ -9,7 +9,8 @@
       "@/*": ["./*"]
     },
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noImplicitOverride": false
   },
   "include": ["src"],
   "references": [{ "path": "../shared" }, { "path": "../domain" }]
