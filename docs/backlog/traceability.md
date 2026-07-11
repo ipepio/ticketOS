@@ -2,44 +2,79 @@
 
 This matrix makes every product User Story actionable. The implementation item
 contains its task list and acceptance criteria; developers must not close a
-story until every linked item’s criteria pass through its stated seam.
+story until every linked item's criteria pass through its stated seam.
 
-| US | User story outcome | Delivery item(s) | Acceptance-criteria source |
-| --- | --- | --- | --- |
-| US-01 | Initialize self-hosted Installation | P0-01 | P0-01 acceptance criteria |
-| US-02 | Create isolated Workspaces | P0-02 | P0-02 acceptance criteria |
-| US-03 | One User identity with Memberships | P0-02 | P0-02 acceptance criteria |
-| US-04 | Magic-link and OIDC sign-in | P0-02 | P0-02 acceptance criteria |
-| US-05 | Fixed roles backed by Capabilities | P0-02 | P0-02 acceptance criteria |
-| US-06 | Group Requesters in Organizations | P0-02 | P0-02 acceptance criteria |
-| US-07 | Create portal Ticket | P0-04, P0-05 | P0-04/P0-05 acceptance criteria |
-| US-08 | Create email Ticket | P0-07 | P0-07 acceptance criteria |
-| US-09 | Route inbound mail to Queue | P0-07 | P0-07 acceptance criteria |
-| US-10 | Claim Ticket as Assignee | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 acceptance criteria |
-| US-11 | Move Queue/Status | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 acceptance criteria |
-| US-12 | Read requester-visible Messages | P0-04, P0-05 | P0-04/P0-05 acceptance criteria |
-| US-13 | Write Internal Notes | P0-04, P0-05 | P0-04/P0-05 acceptance criteria |
-| US-14 | Understand chronological Timeline | P0-04 | P0-04 acceptance criteria |
-| US-15 | Restrict confidential Queues | P0-02, P0-03 | P0-02/P0-03 acceptance criteria |
-| US-16 | Private/Organization visibility | P0-04 | P0-04 acceptance criteria |
-| US-17 | Configure Statuses, Priorities, Types | P0-03; P1-02 | P0-03; P1-02 acceptance criteria |
-| US-18 | Secure Attachments | P0-06 | P0-06 acceptance criteria |
-| US-19 | Quarantine unsafe inbound email | P0-07 | P0-07 acceptance criteria |
-| US-20 | RLS and authorization audit | P0-02, P0-08 | P0-02/P0-08 acceptance criteria |
-| US-21 | Business Calendars and SLA Policies | P1-01 | P1-01 acceptance criteria |
-| US-22 | SLA risk/breach visibility | P1-01, P1-05 | P1-01/P1-05 acceptance criteria |
-| US-23 | Versioned Ticket Forms | P1-02 | P1-02 acceptance criteria |
-| US-24 | Bounded Automation | P1-03 | P1-03 acceptance criteria |
-| US-25 | Scoped Knowledge Base | P1-04 | P1-04 acceptance criteria |
-| US-26 | Notification preferences | P1-05 | P1-05 acceptance criteria |
-| US-27 | REST API and signed Webhooks | P1-06 | P1-06 acceptance criteria |
-| US-28 | Production observability | P0-08, P1-05 | P0-08/P1-05 acceptance criteria |
-| US-29 | Select Service Catalog Item | P2-01 | P2-01 acceptance criteria |
-| US-30 | Auditable Approvals | P2-02 | P2-02 acceptance criteria |
-| US-31 | Configurable reports/exports | P2-03 | P2-03 acceptance criteria |
-| US-32 | Retention Policies and Legal Holds | P2-04 | P2-04 acceptance criteria |
-| US-33 | Backup, restore, upgrade | P0-01, P0-08 | P0-01/P0-08 acceptance criteria |
-| US-34 | Spanish/English experience | P0-05, P1-05 | P0-05/P1-05 acceptance criteria |
+## Status Legend
+
+- ✅ **Done** — implementation complete, tests passing, code-reviewed
+- 🔄 **In Progress** — work in progress
+- 📋 **Ready** — specified, dependencies met, awaiting implementation
+
+## Delivery Items
+
+| Item | Title | Status | Depends On |
+|------|-------|--------|------------|
+| P0-01 | Repository, runtime, database, and self-hosted baseline | ✅ Done | none |
+| P0-02 | Identity, Workspaces, Organizations, and authorization | 📋 Ready | P0-01 |
+| P0-03 | Workflow, Queues, priorities, and Ticket Types | 📋 Ready | P0-02 |
+| P0-04 | Ticket and immutable Timeline | 📋 Ready | P0-02, P0-03 |
+| P0-05 | Portal journeys and accessibility | 📋 Ready | P0-02, P0-04 |
+| P0-06 | Secure Attachment lifecycle | 📋 Ready | P0-04, P0-05 |
+| P0-07 | Inbound/outbound email and Intake Quarantine | 📋 Ready | P0-02, P0-04, P0-06 |
+| P0-08 | Audit, operations, recovery, and release evidence | 📋 Ready | P0-01 through P0-07 |
+| P1-01 | Business Calendars and SLA | 📋 Ready | P0-03, P0-04, P0-08 |
+| P1-02 | Versioned Forms and configurable Ticket Types | 📋 Ready | P0-03, P0-04 |
+| P1-03 | Automation Rules | 📋 Ready | P0-04, P1-01 |
+| P1-04 | Knowledge Base and Search | 📋 Ready | P0-02, P0-05, P0-06 |
+| P1-05 | Notifications, SSE, i18n, and observability | 📋 Ready | P0-05, P0-08 |
+| P1-06 | Versioned API and signed Webhooks | 📋 Ready | P0-02, P0-04, P0-08 |
+| P2-01 | Service Catalog | 📋 Ready | P1-01, P1-02 |
+| P2-02 | Approval | 📋 Ready | P2-01 |
+| P2-03 | Reporting | 📋 Ready | P1-01, P1-03, P1-06 |
+| P2-04 | Retention, Legal Holds, and MFA | 📋 Ready | P0-06, P0-08 |
+| P3-01 | Omnichannel support (D) | 📋 Ready | P1-05, P1-06 |
+| P3-02 | Project/issue tracking (B) | 📋 Ready | P1-02, P1-03, P2-03 |
+| P3-03 | Problem, Change, and CMDB | 📋 Ready | P2-02, P2-04 |
+| P3-04 | Hybrid platform (E) | 📋 Ready | P3-01 through P3-03 |
+
+## User Story Traceability
+
+| US | User story outcome | Delivery item(s) | Acceptance-criteria source | Status |
+|----|-------------------|-----------------|---------------------------|--------|
+| US-01 | Initialize self-hosted Installation | P0-01 | P0-01 acceptance criteria | ✅ P0-01 done |
+| US-02 | Create isolated Workspaces | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
+| US-03 | One User identity with Memberships | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
+| US-04 | Magic-link and OIDC sign-in | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
+| US-05 | Fixed roles backed by Capabilities | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
+| US-06 | Group Requesters in Organizations | P0-02 | P0-02 acceptance criteria | 📋 P0-02 ready |
+| US-07 | Create portal Ticket | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | 📋 pending |
+| US-08 | Create email Ticket | P0-07 | P0-07 acceptance criteria | 📋 pending |
+| US-09 | Route inbound mail to Queue | P0-07 | P0-07 acceptance criteria | 📋 pending |
+| US-10 | Claim Ticket as Assignee | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 | 📋 pending |
+| US-11 | Move Queue/Status | P0-03, P0-04, P0-05 | P0-03/P0-04/P0-05 | 📋 pending |
+| US-12 | Read requester-visible Messages | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | 📋 pending |
+| US-13 | Write Internal Notes | P0-04, P0-05 | P0-04/P0-05 acceptance criteria | 📋 pending |
+| US-14 | Understand chronological Timeline | P0-04 | P0-04 acceptance criteria | 📋 pending |
+| US-15 | Restrict confidential Queues | P0-02, P0-03 | P0-02/P0-03 acceptance criteria | 📋 pending |
+| US-16 | Private/Organization visibility | P0-04 | P0-04 acceptance criteria | 📋 pending |
+| US-17 | Configure Statuses, Priorities, Types | P0-03; P1-02 | P0-03; P1-02 | 📋 pending |
+| US-18 | Secure Attachments | P0-06 | P0-06 acceptance criteria | 📋 pending |
+| US-19 | Quarantine unsafe inbound email | P0-07 | P0-07 acceptance criteria | 📋 pending |
+| US-20 | RLS and authorization audit | P0-02, P0-08 | P0-02/P0-08 acceptance criteria | 📋 pending |
+| US-21 | Business Calendars and SLA Policies | P1-01 | P1-01 acceptance criteria | 📋 pending |
+| US-22 | SLA risk/breach visibility | P1-01, P1-05 | P1-01/P1-05 acceptance criteria | 📋 pending |
+| US-23 | Versioned Ticket Forms | P1-02 | P1-02 acceptance criteria | 📋 pending |
+| US-24 | Bounded Automation Rules | P1-03 | P1-03 acceptance criteria | 📋 pending |
+| US-25 | Scoped Knowledge Base | P1-04 | P1-04 acceptance criteria | 📋 pending |
+| US-26 | Notification preferences | P1-05 | P1-05 acceptance criteria | 📋 pending |
+| US-27 | REST API and signed Webhooks | P1-06 | P1-06 acceptance criteria | 📋 pending |
+| US-28 | Production observability | P0-08, P1-05 | P0-08/P1-05 acceptance criteria | 📋 pending |
+| US-29 | Select Service Catalog Item | P2-01 | P2-01 acceptance criteria | 📋 pending |
+| US-30 | Auditable Approvals | P2-02 | P2-02 acceptance criteria | 📋 pending |
+| US-31 | Configurable reports/exports | P2-03 | P2-03 acceptance criteria | 📋 pending |
+| US-32 | Retention Policies and Legal Holds | P2-04 | P2-04 acceptance criteria | 📋 pending |
+| US-33 | Backup, restore, upgrade | P0-01, P0-08 | P0-01/P0-08 acceptance criteria | ✅ P0-01 done |
+| US-34 | Spanish/English experience | P0-05, P1-05 | P0-05/P1-05 acceptance criteria | 📋 pending |
 
 ## Coverage rules
 

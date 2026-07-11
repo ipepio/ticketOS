@@ -12,10 +12,18 @@ P0-01 and is completed before release.
 
 ## P0-01 — Repository, runtime, database, and self-hosted baseline
 
-**Status:** ready  
+**Status:** ✅ Done  
 **Depends on:** none  
 **ADRs:** 0028, 0030–0032, 0036, 0052, 0053, 0055  
 **Seams:** HTTP health interface; migration/backup-restore interface.
+
+### Tasks (all completed)
+
+1. ✅ pnpm TypeScript workspace with strict compiler settings and clear application, worker, domain-module, and UI package ownership.
+2. ✅ Fastify, React/Vite, PostgreSQL connection management, Kysely, SQL migration runner, Vitest, Playwright, ESLint, and CI configured.
+3. ✅ Docker Compose reference deployment for app, worker, PostgreSQL, and local attachment volume; supports external PostgreSQL/S3 configuration.
+4. ✅ Liveness/readiness endpoints, structured logging, configuration validation (Zod), migration preflight, and documented backup/restore commands.
+5. ✅ Transactional outbox/job table and worker claim/retry primitive implemented and tested.
 
 ### Tasks
 
