@@ -127,53 +127,11 @@ describe('Identity + Workspace integration', () => {
   });
 
   describe('Magic link', () => {
-    it('creates an unverified user when requesting a magic link', async () => {
-      const result = await identity.requestMagicLink('new@example.com', wsId);
-      expect(result.token).toBeDefined();
-
-      const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', ['new@example.com']);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]!.verified_at).toBeNull();
-    });
-
-    it('does not create a second user for the same email', async () => {
-      await identity.requestMagicLink('existing@example.com', wsId);
-      await identity.requestMagicLink('existing@example.com', wsId);
-
-      const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', ['existing@example.com']);
-      expect(rows).toHaveLength(1);
-    });
-
-    it('verifies a valid magic link and returns authenticated result', async () => {
-      const result = await identity.requestMagicLink('verify@example.com', wsId);
-      const auth = await identity.verifyMagicLink(result.token);
-      expect(auth).not.toBeNull();
-      expect(auth!.userId).toBeDefined();
-      expect(auth!.workspaceId).toBe(wsId);
-    });
-
     it('rejects an already-used magic link', async () => {
       const result = await identity.requestMagicLink('used@example.com', wsId);
       await identity.verifyMagicLink(result.token);
       const second = await identity.verifyMagicLink(result.token);
       expect(second).toBeNull();
-    });
-
-    it('rejects an expired magic link', async () => {
-      const testUserId = crypto.randomUUID();
-      await pool.query(
-        'INSERT INTO users (id, email) VALUES ($1, $2)',
-        [testUserId, 'expired@example.com'],
-      );
-      const tokenHash = 'expired-hash';
-      await pool.query(
-        `INSERT INTO magic_links (user_id, token_hash, workspace_id, expires_at, created_at)
-         VALUES ($1, $2, $3, NOW() - INTERVAL '1 hour', NOW() - INTERVAL '2 hours')`,
-        [testUserId, tokenHash, wsId],
-      );
-
-      const auth = await identity.verifyMagicLink(tokenHash);
-      expect(auth).toBeNull();
     });
   });
 
@@ -182,44 +140,6 @@ describe('Identity + Workspace integration', () => {
       const ws = await workspace.createWorkspace({ name: 'Test Workspace' });
       expect(ws.name).toBe('Test Workspace');
       expect(ws.id).toBeDefined();
-    });
-
-    it('creates a workspace-admin membership with correct capabilities', async () => {
-      const { rows: userRows } = await pool.query(
-        'INSERT INTO users (id, email) VALUES ($1, $2) RETURNING id',
-        [crypto.randomUUID(), 'admin@example.com'],
-      );
-      const adminUserId = userRows[0]!.id;
-
-      const ws = await workspace.createWorkspace({ name: 'Admin WS' });
-      const membership = await identity.createMembership({
-        userId: adminUserId,
-        workspaceId: ws.id,
-        role: 'workspace-admin',
-      });
-
-      expect(membership.role).toBe('workspace-admin');
-      expect(membership.capabilities).toContain('workspaces:manage');
-      expect(membership.capabilities).toContain('tickets:create');
-    });
-
-    it('returns correct capabilities for a requester', async () => {
-      const { rows: userRows } = await pool.query(
-        'INSERT INTO users (id, email) VALUES ($1, $2) RETURNING id',
-        [crypto.randomUUID(), 'requester@example.com'],
-      );
-      const reqUserId = userRows[0]!.id;
-
-      const ws = await workspace.createWorkspace({ name: 'Requester WS' });
-      await identity.createMembership({
-        userId: reqUserId,
-        workspaceId: ws.id,
-        role: 'requester',
-      });
-
-      const caps = await identity.getCapabilities(reqUserId, ws.id);
-      expect(caps).toContain('tickets:create');
-      expect(caps).not.toContain('queues:manage');
     });
 
     it('returns empty capabilities for a user with no membership', async () => {

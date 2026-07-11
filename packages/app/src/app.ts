@@ -7,6 +7,7 @@ import { PostgresOutbox } from './db/outbox.js';
 import { PostgresAudit } from './db/audit.js';
 import { PostgresIdentity } from './identity/postgres.js';
 import { PostgresWorkspace } from './workspace/postgres.js';
+import { PostgresWorkflow } from './workflow/postgres.js';
 import type { OutboxModule, AuditModule } from '@ticketos/domain';
 import fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
@@ -24,6 +25,7 @@ let outbox: OutboxModule | null = null;
 let audit: AuditModule | null = null;
 let identity: PostgresIdentity | null = null;
 let workspace: PostgresWorkspace | null = null;
+let workflow: PostgresWorkflow | null = null;
 
 export function getOutbox(): OutboxModule {
   if (!outbox) {
@@ -53,6 +55,13 @@ export function getWorkspace(): PostgresWorkspace {
   return workspace;
 }
 
+export function getWorkflow(): PostgresWorkflow {
+  if (!workflow) {
+    throw new Error('Workflow not initialized. Call initApp() first.');
+  }
+  return workflow;
+}
+
 export async function initApp(config: Config): Promise<{
   app: FastifyInstance;
 }> {
@@ -65,6 +74,7 @@ export async function initApp(config: Config): Promise<{
   audit = new PostgresAudit(getPool());
   identity = new PostgresIdentity(getPool(), outbox, audit);
   workspace = new PostgresWorkspace(getPool());
+  workflow = new PostgresWorkflow(getPool());
 
   // Create Fastify instance
   const app = fastify({
