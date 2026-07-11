@@ -1,0 +1,61 @@
+{
+  "name": "@ticketos/app",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./config": {
+      "import": "./dist/config.js",
+      "types": "./dist/config.d.ts"
+    },
+    "./db/connection": {
+      "import": "./dist/db/connection.js",
+      "types": "./dist/db/connection.d.ts"
+    },
+    "./db/outbox": {
+      "import": "./dist/db/outbox.js",
+      "types": "./dist/db/outbox.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:generate": "kysely-codegen --dialect postgres --url $DATABASE_URL",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/session": "^11.0.0",
+    "@fastify/static": "^8.0.0",
+    "@fastify/swagger": "^9.0.0",
+    "@fastify/swagger-ui": "^5.0.0",
+    "@ticketos/domain": "workspace:*",
+    "@ticketos/shared": "workspace:*",
+    "fastify": "^5.2.0",
+    "kysely": "^0.27.0",
+    "pg": "^8.13.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@fastify/swagger": "^9.0.0",
+    "@fastify/swagger-ui": "^5.0.0",
+    "@types/pg": "^8.11.0",
+    "eslint": "^9.0.0",
+    "kysely-codegen": "^0.17.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

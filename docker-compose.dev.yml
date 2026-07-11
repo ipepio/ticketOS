@@ -1,0 +1,14 @@
+# Development overrides — not for production
+
+services:
+  app:
+    volumes:
+      - ./packages/app/src:/app/packages/app/src
+    environment:
+      LOG_LEVEL: debug
+
+  worker:
+    volumes:
+      - ./packages/worker/src:/app/packages/worker/src
+    environment:
+      LOG_LEVEL: debug

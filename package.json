@@ -1,0 +1,28 @@
+{
+  "name": "ticketos",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:app": "pnpm --filter @ticketos/app dev",
+    "dev:worker": "pnpm --filter @ticketos/worker dev",
+    "dev:portal": "pnpm --filter @ticketos/portal dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @ticketos/tests playwright test",
+    "db:migrate": "pnpm --filter @ticketos/app db:migrate",
+    "db:generate": "pnpm --filter @ticketos/app db:generate",
+    "docker:up": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build",
+    "docker:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml down",
+    "docker:logs": "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

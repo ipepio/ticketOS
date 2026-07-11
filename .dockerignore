@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+.pnp.*
+*.local
+
+# Build outputs
+dist
+build
+.vite
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+
+# Docker
+*.pid
+*.seed
+*.pid.lock
+
+# Misc
+.turbo

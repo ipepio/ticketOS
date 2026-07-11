@@ -1,0 +1,71 @@
+# ticketOS — Docker Compose reference deployment
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ticketos
+      POSTGRES_PASSWORD: ticketos
+      POSTGRES_DB: ticketos
+    ports:
+      - "15432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./storage/attachments:/var/lib/attachments
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketos -d ticketos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://ticketos:ticketos@postgres:5432/ticketos
+      ATTACHMENT_STORAGE_ADAPTER: local
+      ATTACHMENT_LOCAL_DIR: /var/lib/attachments
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production-use-32-chars-min}
+      REPLY_TOKEN_SECRET: ${REPLY_TOKEN_SECRET:-change-me-in-production-use-32-chars-min}
+      SMTP_HOST: smtp
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      HOST: 0.0.0.0
+      PORT: "3000"
+      CORS_ORIGIN: http://localhost:5173
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3020:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./storage/attachments:/var/lib/attachments
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node packages/worker/dist/index.js
+    environment:
+      DATABASE_URL: postgresql://ticketos:ticketos@postgres:5432/ticketos
+      ATTACHMENT_STORAGE_ADAPTER: local
+      ATTACHMENT_LOCAL_DIR: /var/lib/attachments
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production-use-32-chars-min}
+      REPLY_TOKEN_SECRET: ${REPLY_TOKEN_SECRET:-change-me-in-production-use-32-chars-min}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./storage/attachments:/var/lib/attachments
+
+  smtp:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  pgdata:

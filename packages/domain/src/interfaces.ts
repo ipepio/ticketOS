@@ -1,0 +1,199 @@
+// Domain modules own their interfaces here.
+// No framework-specific types may leak into domain interfaces.
+
+import type {
+  WorkspaceId,
+  UserId,
+  Capability,
+  Role,
+  MembershipId,
+  AuditEventKind,
+  QueueId,
+} from '@ticketos/shared';
+
+// ---------------------------------------------------------------------------
+// Identity module seam
+// ---------------------------------------------------------------------------
+
+export interface AuthenticateResult {
+  userId: UserId;
+  workspaceId?: WorkspaceId;
+}
+
+export interface CreateMembershipInput {
+  userId: UserId;
+  workspaceId: WorkspaceId;
+  role: Role;
+}
+
+export interface WorkspaceMembership {
+  id: MembershipId;
+  userId: UserId;
+  workspaceId: WorkspaceId;
+  role: Role;
+  capabilities: Capability[];
+}
+
+export interface IdentityModule {
+  /**
+   * Authenticate via magic-link token or OIDC.
+   * Returns user identity and optionally an active workspace context.
+   */
+  authenticate(token: string): Promise<AuthenticateResult | null>;
+
+  /**
+   * Check if a user has a specific capability in a workspace.
+   */
+  hasCapability(
+    userId: UserId,
+    workspaceId: WorkspaceId,
+    capability: Capability,
+  ): Promise<boolean>;
+
+  /**
+   * Create a workspace membership for a user.
+   * Caller must log an audit event after this succeeds.
+   */
+  createMembership(
+    input: CreateMembershipInput,
+  ): Promise<WorkspaceMembership>;
+
+  /**
+   * Get memberships for a user across all workspaces.
+   */
+  getUserMemberships(userId: UserId): Promise<WorkspaceMembership[]>;
+
+  /**
+   * Get all capabilities for a user in a workspace.
+   */
+  getCapabilities(userId: UserId, workspaceId: WorkspaceId): Promise<Capability[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace module seam
+// ---------------------------------------------------------------------------
+
+export interface Workspace {
+  id: WorkspaceId;
+  name: string;
+  createdAt: string;
+}
+
+export interface Organization {
+  id: string;
+  workspaceId: WorkspaceId;
+  name: string;
+}
+
+export interface Queue {
+  id: QueueId;
+  workspaceId: WorkspaceId;
+  name: string;
+  accessMode: 'open' | 'restricted';
+  createdAt: string;
+}
+
+export type QueueAccessMode = 'open' | 'restricted';
+
+export interface CreateWorkspaceInput {
+  name: string;
+}
+
+export interface CreateOrganizationInput {
+  workspaceId: WorkspaceId;
+  name: string;
+}
+
+export interface CreateQueueInput {
+  workspaceId: WorkspaceId;
+  name: string;
+  accessMode?: 'open' | 'restricted';
+}
+
+export interface WorkspaceModule {
+  createWorkspace(input: CreateWorkspaceInput): Promise<Workspace>;
+  getWorkspace(id: WorkspaceId): Promise<Workspace | null>;
+
+  createOrganization(input: CreateOrganizationInput): Promise<Organization>;
+  getOrganizations(workspaceId: WorkspaceId): Promise<Organization[]>;
+
+  createQueue(input: CreateQueueInput): Promise<Queue>;
+  getQueue(id: QueueId): Promise<Queue | null>;
+  getQueues(workspaceId: WorkspaceId): Promise<Queue[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Outbox / Job interface (domain-level, not framework-specific)
+// ---------------------------------------------------------------------------
+
+export interface OutboxEvent {
+  id: string;
+  aggregateId: string;
+  eventType: string;
+  data: unknown;
+  createdAt: string;
+  deliveredAt: string | null;
+  retryCount: number;
+}
+
+export interface DomainEvent {
+  aggregateId: string;
+  eventType: string;
+  data: Record<string, unknown>;
+}
+
+export interface OutboxModule {
+  /**
+   * Persist a domain event to the outbox within an existing transaction.
+   * Must be called inside a transaction so it is atomic with state changes.
+   */
+  enqueue(event: DomainEvent): Promise<void>;
+
+  /**
+   * Fetch claims for the worker to process (P0-01: basic claim primitive).
+   */
+  fetchAvailable(limit?: number): Promise<OutboxEvent[]>;
+
+  /**
+   * Mark an event as delivered (worker acknowledges).
+   */
+  markDelivered(eventId: string): Promise<void>;
+
+  /**
+   * Mark an event as failed (retry logic handled by worker).
+   */
+  markFailed(eventId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Audit log seam
+// ---------------------------------------------------------------------------
+
+export interface AuditEvent {
+  id: string;
+  kind: AuditEventKind;
+  actorUserId: UserId | null;
+  workspaceId: WorkspaceId | null;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AuditModule {
+  /**
+   * Append an audit event. Must be called within a transaction when
+   * audit evidence is required alongside a state change.
+   */
+  append(event: Omit<AuditEvent, 'id' | 'createdAt'>): Promise<void>;
+
+  /**
+   * Query audit events for a workspace (admin only).
+   */
+  query(workspaceId: WorkspaceId, limit?: number): Promise<AuditEvent[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Placeholder interfaces for future P0 modules
+// (Ticket, Workflow, Storage, Email)
+// ---------------------------------------------------------------------------
+
+// These are defined in their respective module test files and implementation.
