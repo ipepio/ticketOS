@@ -200,6 +200,12 @@ function IconGear({ size = 18 }: { size?: number }) {
 // Error Boundary
 // ---------------------------------------------------------------------------
 
+// Import t directly for class component (ErrorBoundary)
+function getDefaultLocale(): Locale {
+  const saved = localStorage.getItem('ticketos-locale');
+  return (saved === 'es' || saved === 'en') ? saved : 'en';
+}
+
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; error: Error | null }
@@ -219,8 +225,8 @@ class ErrorBoundary extends React.Component<
             <line x1="12" y1="8" x2="12" y2="12"/>
             <line x1="12" y1="16" x2="12.01" y2="16"/>
           </svg>
-          <h2 className="error-state-title">Algo salió mal</h2>
-          <p className="error-state-desc">{this.state.error?.message}</p>
+          <h2 className="error-state-title">{translate(getDefaultLocale(), 'portal.error_boundary_title')}</h2>
+          <p className="error-state-desc">{this.state.error?.message || translate(getDefaultLocale(), 'portal.error_boundary_desc')}</p>
         </div>
       );
     }
@@ -233,9 +239,10 @@ class ErrorBoundary extends React.Component<
 // ---------------------------------------------------------------------------
 
 function LoadingSkeleton({ rows = 5 }: { rows?: number }) {
+  const { t } = useI18n();
   return (
     <div role="status" aria-live="polite" aria-busy="true">
-      <span className="sr-only">Cargando...</span>
+      <span className="sr-only">{t('portal.loading')}</span>
       <div className="timeline">
         {Array.from({ length: rows }).map((_, i) => (
           <div key={i} className="timeline-entry event" style={{ opacity: 0.6 }}>
@@ -483,14 +490,14 @@ function WorkspaceSelector({
                 className="nav-item"
                 style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 'var(--sp-3) var(--sp-4)' }}
                 onClick={() => onSelect(ws)}
-                aria-label={`${ws.name} — ${ws.role ?? 'Member'}`}
+                aria-label={`${ws.name} — ${ws.role ?? t('portal.member')}`}
               >
                 <div style={{ width: 36, height: 36, borderRadius: 'var(--r-md)', background: 'var(--accent-light)', color: 'var(--accent)', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 14 }}>
                   {ws.name.charAt(0).toUpperCase()}
                 </div>
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ fontWeight: 600 }}>{ws.name}</div>
-                  <div className="text-small text-muted">{ws.role ?? 'Member'}</div>
+                  <div className="text-small text-muted">{ws.role ?? t('portal.member')}</div>
                 </div>
               </button>
             ))}
@@ -588,11 +595,11 @@ function Sidebar({
         )}
       </nav>
       <div className="sidebar-footer">
-        <div className="workspace-switcher" style={{ cursor: 'pointer' }} onClick={onLogout} title="Logout">
+        <div className="workspace-switcher" style={{ cursor: 'pointer' }} onClick={onLogout} title={t('portal.logout')}>
           <div className="ws-icon">{workspace?.name?.charAt(0).toUpperCase() ?? '?'}</div>
           <div>
             <div className="ws-name">{workspace?.name ?? '—'}</div>
-            <div className="ws-role">Logout</div>
+            <div className="ws-role">{t('portal.logout')}</div>
           </div>
         </div>
       </div>
@@ -947,16 +954,16 @@ function TicketDetail({
                   )}
                   <div className="timeline-entry-body">
                     <div className="timeline-entry-header">
-                      {entry.kind === 'message' && <span className="timeline-badge">Mensaje</span>}
+                      {entry.kind === 'message' && <span className="timeline-badge">{t('portal.timeline.message')}</span>}
                       {entry.kind === 'internal_note' && (
                         <span className="timeline-badge">
-                          <IconLock size={11} /> Nota interna
+                          <IconLock size={11} /> {t('portal.timeline.internal_note')}
                         </span>
                       )}
-                      {entry.kind === 'system_event' && <span className="timeline-badge">Sistema</span>}
-                      {entry.kind === 'status_change' && <span className="timeline-badge">Sistema</span>}
-                      {entry.kind === 'priority_change' && <span className="timeline-badge">Sistema</span>}
-                      {entry.kind === 'assignment_change' && <span className="timeline-badge">Sistema</span>}
+                      {entry.kind === 'system_event' && <span className="timeline-badge">{t('portal.timeline.system_event')}</span>}
+                      {entry.kind === 'status_change' && <span className="timeline-badge">{t('portal.timeline.system_event')}</span>}
+                      {entry.kind === 'priority_change' && <span className="timeline-badge">{t('portal.timeline.system_event')}</span>}
+                      {entry.kind === 'assignment_change' && <span className="timeline-badge">{t('portal.timeline.system_event')}</span>}
                       <span className="timeline-time">
                         {new Date(entry.createdAt).toLocaleString()}
                       </span>
@@ -1213,7 +1220,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
       document.cookie = `sessionId=${result.sessionId}; path=/; max-age=86400; samesite=lax`;
       window.location.href = window.location.pathname;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Setup failed');
+      setError(err instanceof Error ? err.message : t('portal.setup_failed'));
     } finally {
       setLoading(false);
     }
@@ -1233,13 +1240,13 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           <div className="brand-name">ticket<span className="os">OS</span></div>
         </div>
 
-        <h1 className="auth-title">{t('portal.setup_title') || 'Set up your installation'}</h1>
-        <p className="auth-subtitle">{t('portal.setup_subtitle') || 'Create the first Workspace and admin account.'}</p>
+        <h1 className="auth-title">{t('portal.setup_title')}</h1>
+        <p className="auth-subtitle">{t('portal.setup_subtitle')}</p>
 
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label className="label" htmlFor="ws-name">
-              {t('portal.setup_workspace_name') || 'Workspace name'} <span className="required">*</span>
+              {t('portal.setup_workspace_name')} <span className="required">*</span>
             </label>
             <input className="input" id="ws-name" value={workspaceName}
               onChange={(e) => setWorkspaceName(e.target.value)} required autoFocus />
@@ -1247,7 +1254,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
           <div className="field">
             <label className="label" htmlFor="admin-email">
-              {t('portal.setup_admin_email') || 'Admin email'} <span className="required">*</span>
+              {t('portal.setup_admin_email')} <span className="required">*</span>
             </label>
             <input className="input" id="admin-email" type="email" value={adminEmail}
               onChange={(e) => setAdminEmail(e.target.value)} required />
@@ -1255,7 +1262,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
           <div className="field">
             <label className="label" htmlFor="admin-name">
-              {t('portal.setup_admin_name') || 'Your name'}
+              {t('portal.setup_admin_name')}
             </label>
             <input className="input" id="admin-name" value={adminName}
               onChange={(e) => setAdminName(e.target.value)} />
@@ -1263,7 +1270,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
           <div className="field">
             <label className="label" htmlFor="timezone">
-              {t('portal.setup_timezone') || 'Timezone'}
+              {t('portal.setup_timezone')}
             </label>
             <select className="input" id="timezone" value={timezone}
               onChange={(e) => setTimezone(e.target.value)}>
@@ -1274,7 +1281,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           </div>
 
           <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>
-            {loading ? (t('portal.setup_creating') || 'Creating...') : (t('portal.setup_start') || 'Create installation')}
+            {loading ? t('portal.setup_creating') : t('portal.setup_start')}
           </button>
         </form>
 

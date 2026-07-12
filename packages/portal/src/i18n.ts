@@ -122,6 +122,43 @@ export const localeLabels: Record<Locale, Record<string, string>> = {
     'portal.loading': 'Loading...',
     'portal.error': 'An error occurred',
     'portal.unauthorized': 'Access denied',
+
+    // Setup wizard
+    'portal.setup_title': 'Set up your installation',
+    'portal.setup_subtitle': 'Create the first Workspace and admin account.',
+    'portal.setup_workspace_name': 'Workspace name',
+    'portal.setup_admin_email': 'Admin email',
+    'portal.setup_admin_name': 'Your name',
+    'portal.setup_timezone': 'Timezone',
+    'portal.setup_start': 'Create installation',
+    'portal.setup_creating': 'Creating...',
+    'portal.setup_failed': 'Setup failed',
+
+    // Timeline badges
+    'portal.timeline.message': 'Message',
+    'portal.timeline.internal_note': 'Internal Note',
+    'portal.timeline.system_event': 'System',
+
+    // Sidebar / User
+    'portal.logout': 'Logout',
+    'portal.member': 'Member',
+
+    // Page titles
+    'portal.page.login': 'Sign In',
+    'portal.page.workspace-select': 'Select Workspace',
+    'portal.page.ticket-list': 'My Tickets',
+    'portal.page.ticket-detail': 'Ticket Detail',
+    'portal.page.create-ticket': 'New Ticket',
+    'portal.page.queue': 'Agent Queue',
+    'portal.page.my-tickets': 'My Tickets',
+    'portal.page.admin-queues': 'Manage Queues',
+    'portal.page.admin-members': 'Manage Members',
+    'portal.page.loading': 'Loading...',
+    'portal.page.setup': 'Installation',
+
+    // Error boundary
+    'portal.error_boundary_title': 'Something went wrong',
+    'portal.error_boundary_desc': 'An unexpected error occurred.',
   },
   es: {
     // Navigation
@@ -240,6 +277,43 @@ export const localeLabels: Record<Locale, Record<string, string>> = {
     'portal.loading': 'Cargando...',
     'portal.error': 'Ocurrió un error',
     'portal.unauthorized': 'Acceso denegado',
+
+    // Setup wizard
+    'portal.setup_title': 'Configura tu instalación',
+    'portal.setup_subtitle': 'Crea el primer Espacio de Trabajo y cuenta de administrador.',
+    'portal.setup_workspace_name': 'Nombre del espacio de trabajo',
+    'portal.setup_admin_email': 'Correo del administrador',
+    'portal.setup_admin_name': 'Tu nombre',
+    'portal.setup_timezone': 'Zona horaria',
+    'portal.setup_start': 'Crear instalación',
+    'portal.setup_creating': 'Creando...',
+    'portal.setup_failed': 'Error al configurar',
+
+    // Timeline badges
+    'portal.timeline.message': 'Mensaje',
+    'portal.timeline.internal_note': 'Nota interna',
+    'portal.timeline.system_event': 'Sistema',
+
+    // Sidebar / User
+    'portal.logout': 'Cerrar sesión',
+    'portal.member': 'Miembro',
+
+    // Page titles
+    'portal.page.login': 'Iniciar sesión',
+    'portal.page.workspace-select': 'Seleccionar espacio',
+    'portal.page.ticket-list': 'Mis Tickets',
+    'portal.page.ticket-detail': 'Detalle del Ticket',
+    'portal.page.create-ticket': 'Nuevo Ticket',
+    'portal.page.queue': 'Cola de Agentes',
+    'portal.page.my-tickets': 'Mis Tickets',
+    'portal.page.admin-queues': 'Administrar Colas',
+    'portal.page.admin-members': 'Administrar Miembros',
+    'portal.page.loading': 'Cargando...',
+    'portal.page.setup': 'Instalación',
+
+    // Error boundary
+    'portal.error_boundary_title': 'Algo salió mal',
+    'portal.error_boundary_desc': 'Ocurrió un error inesperado.',
   },
 };
 
