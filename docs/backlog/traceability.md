@@ -28,10 +28,10 @@ story until every linked item's criteria pass through its stated seam.
 | P1-04 | Knowledge Base and Search | ✅ Done | P0-02, P0-05, P0-06 |
 | P1-05 | Notifications, SSE, i18n, and observability | ✅ Done | P0-05, P0-08 |
 | P1-06 | Versioned API and signed Webhooks | ✅ Done | P0-02, P0-04, P0-08 |
-| P2-01 | Service Catalog | 📋 Ready | P1-01, P1-02 |
-| P2-02 | Approval | 📋 Ready | P2-01 |
-| P2-03 | Reporting | 📋 Ready | P1-01, P1-03, P1-06 |
-| P2-04 | Retention, Legal Holds, and MFA | 📋 Ready | P0-06, P0-08 |
+| P2-01 | Service Catalog | ✅ Done | P1-01, P1-02 |
+| P2-02 | Approval | ✅ Done | P2-01 |
+| P2-03 | Reporting | ✅ Done | P1-01, P1-03, P1-06 |
+| P2-04 | Retention, Legal Holds, and MFA | ✅ Done | P0-06, P0-08 |
 | P3-01 | Omnichannel support (D) | 📋 Ready | P1-05, P1-06 |
 | P3-02 | Project/issue tracking (B) | 📋 Ready | P1-02, P1-03, P2-03 |
 | P3-03 | Problem, Change, and CMDB | 📋 Ready | P2-02, P2-04 |
