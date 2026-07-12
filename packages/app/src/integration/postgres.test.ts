@@ -63,6 +63,7 @@ describe('Integration Module', () => {
     await pool.query('DELETE FROM webhook_deliveries');
     await pool.query('DELETE FROM webhooks');
     await pool.query('DELETE FROM service_tokens');
+    await pool.query('DELETE FROM tickets');
     await pool.query('DELETE FROM users');
     await pool.query('DELETE FROM workspaces');
 
