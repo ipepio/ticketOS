@@ -11,3 +11,4 @@ export * from './catalog';
 export * from './approval';
 export * from './reporting';
 export * from './retention';
+export * from './omnichannel';
