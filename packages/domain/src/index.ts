@@ -6,3 +6,4 @@ export * from './forms';
 export * from './automation';
 export * from './knowledge-base';
 export * from './notifications';
+export * from './integration';
