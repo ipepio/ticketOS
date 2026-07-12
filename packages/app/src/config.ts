@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+// Environment variables are strings: Boolean('false') is true, so Zod's
+// coerce.boolean() is unsafe for SMTP/IMAP TLS flags.
+const environmentBoolean = z.preprocess(
+  (value) => value === 'true' ? true : value === 'false' ? false : value,
+  z.boolean(),
+);
+
 const configSchema = z.object({
   DATABASE_URL: z.string().url(),
   ATTACHMENT_STORAGE_ADAPTER: z.enum(['local', 's3']).default('local'),
@@ -15,12 +22,13 @@ const configSchema = z.object({
     .default('false'),
   SMTP_HOST: z.string().default('localhost'),
   SMTP_PORT: z.coerce.number().default(1025),
-  SMTP_SECURE: z.coerce.boolean().default(false),
+  SMTP_SECURE: environmentBoolean.default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
+  SMTP_FROM: z.string().email().default('no-reply@ticketos.local'),
   IMAP_HOST: z.string().optional(),
   IMAP_PORT: z.coerce.number().optional(),
-  IMAP_SECURE: z.coerce.boolean().optional(),
+  IMAP_SECURE: environmentBoolean.optional(),
   IMAP_USER: z.string().optional(),
   IMAP_PASSWORD: z.string().optional(),
   OIDC_ISSUER: z.string().optional(),
@@ -31,6 +39,7 @@ const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().default(3000),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  PUBLIC_APP_URL: z.string().url().default('http://localhost:5173'),
   CORRELATION_ID_HEADER: z.string().default('X-Correlation-Id'),
   LOG_LEVEL: z
     .enum(['silent', 'fatal', 'error', 'warn', 'info', 'debug', 'trace'])

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { createRoot } from 'react-dom/client';
 import { localeLabels, t as translate, type Locale } from './i18n';
 import './ticketos.css';
 
@@ -83,7 +84,9 @@ function useI18n() {
 // API helpers
 // ---------------------------------------------------------------------------
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+// In development Vite proxies /api to the Docker app. In deployments this
+// remains same-origin unless an explicit public API URL is configured.
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -513,11 +516,13 @@ function Sidebar({
   onNavigate,
   workspace,
   ticketCount,
+  onLogout,
 }: {
   currentPage: string;
   onNavigate: (page: string) => void;
   workspace: Workspace | null;
   ticketCount: number;
+  onLogout: () => void;
 }) {
   const { t } = useI18n();
   const isAgent = workspace?.role === 'agent' || workspace?.role === 'workspace-admin';
@@ -583,11 +588,11 @@ function Sidebar({
         )}
       </nav>
       <div className="sidebar-footer">
-        <div className="workspace-switcher">
+        <div className="workspace-switcher" style={{ cursor: 'pointer' }} onClick={onLogout} title="Logout">
           <div className="ws-icon">{workspace?.name?.charAt(0).toUpperCase() ?? '?'}</div>
           <div>
             <div className="ws-name">{workspace?.name ?? '—'}</div>
-            <div className="ws-role">{workspace?.role ?? 'Member'}</div>
+            <div className="ws-role">Logout</div>
           </div>
         </div>
       </div>
@@ -1175,10 +1180,118 @@ function BottomNav({ currentPage, onNavigate, isAgent }: { currentPage: string; 
 }
 
 // ---------------------------------------------------------------------------
+// Setup Wizard (First-run onboarding)
+// ---------------------------------------------------------------------------
+
+function SetupWizard({ onComplete }: { onComplete: () => void }) {
+  const { t } = useI18n();
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminName, setAdminName] = useState('');
+  const [locale, setLocale] = useState<Locale>('en');
+  const [timezone, setTimezone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const result = await api<{ workspaceId: string; sessionId: string }>('/api/setup/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({
+          workspaceName,
+          adminEmail,
+          adminName,
+          locale,
+          timezone: timezone || 'UTC',
+        }),
+      });
+      // Set the session cookie and reload
+      document.cookie = `sessionId=${result.sessionId}; path=/; max-age=86400; samesite=lax`;
+      window.location.href = window.location.pathname;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Setup failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const timezones = [
+    'UTC', 'America/Mexico_City', 'America/New_York', 'America/Los_Angeles',
+    'America/Chicago', 'America/Sao_Paulo', 'Europe/London', 'Europe/Madrid',
+    'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney',
+  ];
+
+  return (
+    <main className="auth-page" data-testid="setup-wizard">
+      <div className="auth-card" style={{ maxWidth: 480 }}>
+        <div className="auth-brand">
+          <div className="logo">T</div>
+          <div className="brand-name">ticket<span className="os">OS</span></div>
+        </div>
+
+        <h1 className="auth-title">{t('portal.setup_title') || 'Set up your installation'}</h1>
+        <p className="auth-subtitle">{t('portal.setup_subtitle') || 'Create the first Workspace and admin account.'}</p>
+
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label className="label" htmlFor="ws-name">
+              {t('portal.setup_workspace_name') || 'Workspace name'} <span className="required">*</span>
+            </label>
+            <input className="input" id="ws-name" value={workspaceName}
+              onChange={(e) => setWorkspaceName(e.target.value)} required autoFocus />
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="admin-email">
+              {t('portal.setup_admin_email') || 'Admin email'} <span className="required">*</span>
+            </label>
+            <input className="input" id="admin-email" type="email" value={adminEmail}
+              onChange={(e) => setAdminEmail(e.target.value)} required />
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="admin-name">
+              {t('portal.setup_admin_name') || 'Your name'}
+            </label>
+            <input className="input" id="admin-name" value={adminName}
+              onChange={(e) => setAdminName(e.target.value)} />
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="timezone">
+              {t('portal.setup_timezone') || 'Timezone'}
+            </label>
+            <select className="input" id="timezone" value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}>
+              {timezones.map((tz) => (
+                <option key={tz} value={tz}>{tz}</option>
+              ))}
+            </select>
+          </div>
+
+          <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={loading}>
+            {loading ? (t('portal.setup_creating') || 'Creating...') : (t('portal.setup_start') || 'Create installation')}
+          </button>
+        </form>
+
+        {success && <p className="mt-4 text-center text-small" style={{ color: 'var(--success)' }}>{success}</p>}
+        {error && <p className="mt-4 text-center text-small" style={{ color: 'var(--danger)' }} role="alert">{error}</p>}
+      </div>
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // App Content (inside I18nProvider)
 // ---------------------------------------------------------------------------
 
 type Page =
+  | 'loading'
+  | 'setup'
   | 'login'
   | 'workspace-select'
   | 'ticket-list'
@@ -1191,14 +1304,92 @@ type Page =
 
 function AppContent() {
   const { t } = useI18n();
-  const [page, setPage] = useState<Page>('login');
+  const [page, setPage] = useState<Page>('loading');
   const [user, setUser] = useState<User | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [availableWorkspaces, setAvailableWorkspaces] = useState<Workspace[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // -------------------------------------------------------------------------
+  // Session hydration — runs once on mount
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    // Step 1: check for magic-link token in URL
+    const tokenParam = new URLSearchParams(window.location.search).get('token');
+
+    void (async () => {
+      if (tokenParam) {
+        try {
+          // Exchange token for session
+          const verified = await api<{ userId: string; workspaceId?: string }>('/api/auth/verify', {
+            method: 'POST',
+            body: JSON.stringify({ token: tokenParam }),
+          });
+          window.history.replaceState({}, '', window.location.pathname);
+          // Session cookie is now set; continue to session check
+        } catch {
+          setError('Invalid or expired magic link');
+          setPage('login');
+          return;
+        }
+      }
+
+      // Step 2: check existing session
+      try {
+        const session = await api<{
+          authenticated: boolean;
+          userId?: string;
+          workspaceId?: string;
+          workspaces?: Workspace[];
+        }>('/api/auth/session');
+
+        if (!session.authenticated) {
+          // Step 3: check if installation needs setup
+          try {
+            const status = await api<{ configured: boolean }>('/api/setup/status');
+            if (!status.configured) {
+              setPage('setup');
+              return;
+            }
+          } catch {
+            // If setup endpoint fails, just show login
+          }
+          setPage('login');
+          return;
+        }
+
+        // Session exists — restore state
+        setUser({ id: session.userId!, email: '' });
+        const workspaces = session.workspaces ?? [];
+        setAvailableWorkspaces(workspaces);
+
+        if (workspaces.length === 0) {
+          setPage('workspace-select');
+          return;
+        }
+
+        // Try to restore last-used workspace or use first
+        const lastWsId = session.workspaceId;
+        const targetWs = lastWsId
+          ? workspaces.find((w) => w.id === lastWsId)
+          : workspaces[0];
+
+        if (targetWs) {
+          setWorkspace(targetWs);
+          setPage(targetWs.role === 'agent' || targetWs.role === 'workspace-admin' ? 'queue' : 'ticket-list');
+        } else {
+          setPage('workspace-select');
+        }
+      } catch {
+        // Network error — show login
+        setPage('login');
+      }
+    })();
+  }, []);
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -1290,6 +1481,16 @@ function AppContent() {
     }
   }, [workspace]);
 
+  const handleLogout = useCallback(async () => {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } catch { /* ignore */ }
+    setUser(null);
+    setWorkspace(null);
+    setAvailableWorkspaces([]);
+    setPage('login');
+  }, []);
+
   const isAgent = workspace?.role === 'agent' || workspace?.role === 'workspace-admin';
 
   return (
@@ -1301,6 +1502,7 @@ function AppContent() {
           onNavigate={(p) => setPage(p as Page)}
           workspace={workspace}
           ticketCount={tickets.length}
+          onLogout={handleLogout}
         />
       )}
 
@@ -1333,9 +1535,24 @@ function AppContent() {
         )}
 
         {/* Pages */}
+        {page === 'loading' && (
+          <main className="auth-page">
+            <div className="auth-card">
+              <div className="auth-brand">
+                <div className="logo">T</div>
+                <div className="brand-name">ticket<span className="os">OS</span></div>
+              </div>
+              <LoadingSkeleton rows={2} />
+            </div>
+          </main>
+        )}
+        {page === 'setup' && <SetupWizard onComplete={() => window.location.reload()} />}
         {page === 'login' && <Login onLogin={handleLogin} />}
         {page === 'workspace-select' && (
-          <WorkspaceSelector workspaces={[]} onSelect={handleWorkspaceSelect} />
+          <WorkspaceSelector
+            workspaces={availableWorkspaces}
+            onSelect={handleWorkspaceSelect}
+          />
         )}
 
         {page === 'ticket-list' && (
@@ -1400,3 +1617,14 @@ export default function App() {
     </I18nProvider>
   );
 }
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error('ticketOS could not find the #root element');
+}
+
+createRoot(rootElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);

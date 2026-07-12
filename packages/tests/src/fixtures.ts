@@ -37,7 +37,7 @@ export interface TestFixtures {
 }
 
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgresql://ticketos:ticketos@localhost:15432/ticketos';
+  process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://ticketos:ticketos@localhost:15432/ticketos';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3020';
 

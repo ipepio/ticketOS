@@ -1,7 +1,7 @@
 import type { Config } from './config.js';
 import { initDb, closeDb, getPool } from './db/connection.js';
 import { migrate } from './db/migrate.js';
-import { registerAuthRoutes, registerTicketRoutes } from './routes/index.js';
+import { registerAuthRoutes, registerTicketRoutes, registerSetupRoutes } from './routes/index.js';
 import { registerRootRoute } from './routes/root.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { PostgresOutbox } from './db/outbox.js';
@@ -15,7 +15,6 @@ import fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import fastifyCookie from '@fastify/cookie';
-import fastifySession from '@fastify/session';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -105,16 +104,11 @@ export async function initApp(config: Config): Promise<{
   });
 
   // Register plugins
-  await app.register(fastifyCors, { origin: config.CORS_ORIGIN });
-  await app.register(fastifyCookie);
-  await app.register(fastifySession, {
-    secret: config.SESSION_SECRET,
-    cookie: {
-      secure: config.PORT !== 3000,
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24h
-    },
+  await app.register(fastifyCors, {
+    origin: config.CORS_ORIGIN.split(',').map((o) => o.trim()),
+    credentials: true,
   });
+  await app.register(fastifyCookie);
 
   // Register routes
   await app.register(registerRootRoute);
@@ -122,6 +116,7 @@ export async function initApp(config: Config): Promise<{
   await app.register(async (fastify) => {
     await registerAuthRoutes(fastify, config);
     await registerTicketRoutes(fastify, config);
+    await registerSetupRoutes(fastify, config);
   });
 
   // Serve built portal (if exists)

@@ -3,6 +3,29 @@ import { getIdentity, getWorkspace } from '../app.js';
 import type { Config } from '../config.js';
 
 /**
+ * Determine whether the cookie Secure flag should be set.
+ * Production (HTTPS) forces Secure; local dev (HTTP) does not.
+ */
+function isSecure(config: Config): boolean {
+  try {
+    const url = new URL(config.PUBLIC_APP_URL);
+    return url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function cookieOptions(config: Config, maxAge = 86400) {
+  return {
+    path: '/',
+    httpOnly: true,
+    secure: isSecure(config),
+    sameSite: 'lax' as const,
+    maxAge,
+  };
+}
+
+/**
  * Auth routes — magic link issue/verify
  */
 export async function registerAuthRoutes(
@@ -27,18 +50,27 @@ export async function registerAuthRoutes(
       }
       workspaceId = ws.id;
     } else {
-      // Get user's first workspace for default context
-      const users = await identity.getUserMemberships(body.email as any);
-      if (users.length > 0) {
-        workspaceId = users[0]!.workspaceId;
+      // An email address is not a User ID. Resolve the global User first, then
+      // use one of that User's existing Workspace Memberships.
+      const userId = await identity.getUserIdByEmail(body.email);
+      if (userId) {
+        const memberships = await identity.getUserMemberships(userId);
+        workspaceId = memberships[0]?.workspaceId;
       }
     }
 
+    if (!workspaceId) {
+      return reply.status(404).send({
+        error: 'No Workspace Membership found for this email address',
+      });
+    }
+
     try {
-      const wsId = workspaceId || crypto.randomUUID();
-      const result = await identity.requestMagicLink(body.email, wsId as any);
-      // In production, send email here. For now, return token for testing.
-      return reply.send({ token: result.token, message: 'Magic link sent' });
+      const result = await identity.requestMagicLink(body.email, workspaceId as any);
+      // Build the full magic-link URL that the email should contain
+      const verifyUrl = `${config.PUBLIC_APP_URL}/?token=${result.token}`;
+      fastify.log.info({ email: body.email, verifyUrl }, 'Magic link issued');
+      return reply.send({ message: 'Magic link sent' });
     } catch (err) {
       fastify.log.error({ err }, 'Magic link request failed');
       return reply.status(500).send({ error: 'Failed to issue magic link' });
@@ -59,12 +91,7 @@ export async function registerAuthRoutes(
 
       // Create session
       const sessionId = await identity.createSession(auth.userId, auth.workspaceId || null);
-      reply.setCookie('sessionId', sessionId, {
-        httpOnly: true,
-        secure: config.PORT !== 3000,
-        sameSite: 'lax',
-        maxAge: 24 * 60 * 60,
-      });
+      reply.setCookie('sessionId', sessionId, cookieOptions(config));
 
       return reply.send({ userId: auth.userId, workspaceId: auth.workspaceId });
     }
@@ -77,12 +104,7 @@ export async function registerAuthRoutes(
       }
 
       const sessionId = await identity.createSession(auth.userId, auth.workspaceId || null);
-      reply.setCookie('sessionId', sessionId, {
-        httpOnly: true,
-        secure: config.PORT !== 3000,
-        sameSite: 'lax',
-        maxAge: 24 * 60 * 60,
-      });
+      reply.setCookie('sessionId', sessionId, cookieOptions(config));
 
       return reply.send({ userId: auth.userId, workspaceId: auth.workspaceId });
     }
@@ -103,14 +125,23 @@ export async function registerAuthRoutes(
       return reply.send({ authenticated: false });
     }
 
-    // Get user memberships
+    // Enrich memberships for the Workspace selector without exposing other
+    // Workspaces to an unauthenticated caller.
     const memberships = await identity.getUserMemberships(session.userId);
+    const workspaces = await Promise.all(
+      memberships.map(async (membership) => {
+        const workspace = await getWorkspace().getWorkspace(membership.workspaceId);
+        return workspace
+          ? { id: workspace.id, name: workspace.name, role: membership.role }
+          : null;
+      }),
+    );
 
     return reply.send({
       authenticated: true,
       userId: session.userId,
       workspaceId: session.workspaceId,
-      memberships,
+      workspaces: workspaces.filter((workspace): workspace is NonNullable<typeof workspace> => workspace !== null),
     });
   });
 
