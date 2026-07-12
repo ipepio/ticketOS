@@ -161,6 +161,14 @@ export class PostgresIdentity implements IdentityModule {
     return { userId: user_id, workspaceId: workspace_id };
   }
 
+  async getUserIdByEmail(email: string): Promise<UserId | null> {
+    const { rows } = await this.pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email],
+    );
+    return rows[0]?.id ?? null;
+  }
+
   async authenticate(
     token: string,
   ): Promise<AuthenticateResult | null> {

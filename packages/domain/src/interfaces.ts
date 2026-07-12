@@ -62,6 +62,11 @@ export interface IdentityModule {
   ): Promise<MagicLinkResult>;
 
   /**
+   * Resolve a User ID from an email address.
+   */
+  getUserIdByEmail(email: string): Promise<UserId | null>;
+
+  /**
    * Verify a magic-link token. Returns authenticated user or null if
    * the token is expired, already used, or invalid.
    */
