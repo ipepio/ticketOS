@@ -12,3 +12,4 @@ export * from './approval';
 export * from './reporting';
 export * from './retention';
 export * from './omnichannel';
+export * from './project';
