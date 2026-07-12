@@ -54,6 +54,7 @@ describe('Project Module', () => {
 
     await pool.query('DELETE FROM issues');
     await pool.query('DELETE FROM projects');
+    await pool.query('DELETE FROM tickets');
     await pool.query('DELETE FROM users');
     await pool.query('DELETE FROM workspaces');
 
