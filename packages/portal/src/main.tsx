@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { createRoot } from 'react-dom/client';
-import { localeLabels, t as translate, resolveInitialLocale, type Locale } from './i18n';
+import { t as translate, resolveInitialLocale, SUPPORTED_LOCALES, type Locale } from './i18n';
 import './ticketos.css';
 
 // ---------------------------------------------------------------------------
@@ -91,8 +91,13 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '';
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    // A JSON content-type without a body is rejected by the server, so only
+    // declare it when there is something to parse.
+    headers: {
+      ...(options?.body != null ? { 'Content-Type': 'application/json' } : {}),
+      ...options?.headers,
+    },
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -290,27 +295,18 @@ function EmptyState({ title, description, actionLabel, onAction }: {
 function LocaleSwitcher() {
   const { locale, setLocale } = useI18n();
   return (
-    <div className="flex items-center gap-1" data-testid="locale-switcher">
-      <button
-        className="btn btn-ghost btn-sm"
-        style={locale === 'en' ? { fontWeight: 600, color: 'var(--accent)' } : {}}
-        onClick={() => setLocale('en')}
-        aria-pressed={locale === 'en'}
-        aria-label="English"
-      >
-        EN
-      </button>
-      <span className="text-muted text-small">·</span>
-      <button
-        className="btn btn-ghost btn-sm"
-        style={locale === 'es' ? { fontWeight: 600, color: 'var(--accent)' } : {}}
-        onClick={() => setLocale('es')}
-        aria-pressed={locale === 'es'}
-        aria-label="Español"
-      >
-        ES
-      </button>
-    </div>
+    <select
+      className="input"
+      style={{ width: 'auto', padding: '4px 8px', fontSize: 'var(--text-sm)', height: 'fit-content' }}
+      value={locale}
+      onChange={(e) => setLocale(e.target.value as Locale)}
+      aria-label="Language"
+      data-testid="locale-switcher"
+    >
+      {SUPPORTED_LOCALES.map((l) => (
+        <option key={l.code} value={l.code}>{l.nativeLabel}</option>
+      ))}
+    </select>
   );
 }
 
@@ -708,10 +704,12 @@ function TicketList({
 
 function AgentQueue({
   tickets,
+  currentUserId,
   onOpen,
   onClaim,
 }: {
   tickets: Ticket[];
+  currentUserId: string | null;
   onOpen: (id: string) => void;
   onClaim: (id: string) => void;
 }) {
@@ -721,7 +719,7 @@ function AgentQueue({
   const filtered = tickets.filter((tk) => {
     if (tab === 'all') return true;
     if (tab === 'unassigned') return !tk.assignedTo;
-    if (tab === 'mine') return tk.assignedTo === 'current-user';
+    if (tab === 'mine') return tk.assignedTo !== null && tk.assignedTo === currentUserId;
     if (tab === 'urgent') return tk.priority === 'urgent';
     return true;
   });
@@ -743,7 +741,7 @@ function AgentQueue({
         </div>
         <div className="stat-card">
           <span className="stat-value" style={{ color: 'var(--accent)' }}>
-            {tickets.filter((tk) => tk.assignedTo === 'current-user').length}
+            {tickets.filter((tk) => tk.assignedTo !== null && tk.assignedTo === currentUserId).length}
           </span>
           <span className="stat-label">{t('portal.stat.mine')}</span>
         </div>
@@ -758,7 +756,7 @@ function AgentQueue({
         {([
           { key: 'all', label: t('portal.tab.all'), count: tickets.length },
           { key: 'unassigned', label: t('portal.tab.unassigned'), count: unassignedCount },
-          { key: 'mine', label: t('portal.tab.mine'), count: tickets.filter((tk) => tk.assignedTo === 'current-user').length },
+          { key: 'mine', label: t('portal.tab.mine'), count: tickets.filter((tk) => tk.assignedTo !== null && tk.assignedTo === currentUserId).length },
           { key: 'urgent', label: t('portal.tab.urgent'), count: urgentCount },
         ] as const).map((item) => (
           <button
@@ -865,6 +863,7 @@ function AgentQueue({
 function TicketDetail({
   ticket,
   timeline,
+  currentUserId,
   onBack,
   onSendMessage,
   onAddNote,
@@ -872,6 +871,7 @@ function TicketDetail({
 }: {
   ticket: Ticket;
   timeline: TimelineEntry[];
+  currentUserId: string | null;
   onBack: () => void;
   onSendMessage: (content: string) => void;
   onAddNote: (content: string) => void;
@@ -945,7 +945,7 @@ function TicketDetail({
                     <div className="avatar" style={
                       entry.kind === 'internal_note'
                         ? { background: 'oklch(88% 0.06 65)', color: 'oklch(45% 0.12 65)' }
-                        : entry.authorId === 'current-user'
+                        : entry.authorId !== null && entry.authorId === currentUserId
                           ? { background: 'var(--accent-light)', color: 'var(--accent)' }
                           : {}
                     }>
@@ -1507,11 +1507,15 @@ function AppContent() {
   }, []);
 
   const isAgent = workspace?.role === 'agent' || workspace?.role === 'workspace-admin';
+  // Pre-auth states render without the authenticated shell: setup is a
+  // dedicated full-page experience with no Workspace/session context.
+  const showShell =
+    page !== 'loading' && page !== 'setup' && page !== 'login' && page !== 'workspace-select';
 
   return (
     <div className="app" data-testid="app-root">
       {/* Sidebar (desktop) */}
-      {page !== 'login' && page !== 'workspace-select' && (
+      {showShell && (
         <Sidebar
           currentPage={page}
           onNavigate={(p) => setPage(p as Page)}
@@ -1523,7 +1527,7 @@ function AppContent() {
 
       <div className="main">
         {/* Topbar */}
-        {page !== 'login' && page !== 'workspace-select' && page !== 'ticket-detail' && (
+        {showShell && page !== 'ticket-detail' && (
           <header className="topbar" data-testid="topbar">
             <div className="topbar-title">{t(`portal.page.${page}`) || page}</div>
             <div className="topbar-spacer" />
@@ -1582,7 +1586,8 @@ function AppContent() {
         {(page === 'queue' || page === 'my-tickets') && (
           loading ? <div className="content"><LoadingSkeleton /></div> :
           <AgentQueue
-            tickets={page === 'my-tickets' ? tickets.filter((tk) => tk.assignedTo === 'current-user') : tickets}
+            tickets={page === 'my-tickets' ? tickets.filter((tk) => tk.assignedTo !== null && tk.assignedTo === user?.id) : tickets}
+            currentUserId={user?.id ?? null}
             onOpen={handleOpenTicket}
             onClaim={handleClaim}
           />
@@ -1592,6 +1597,7 @@ function AppContent() {
           <TicketDetail
             ticket={selectedTicket}
             timeline={timeline}
+            currentUserId={user?.id ?? null}
             onBack={() => setPage(isAgent ? 'queue' : 'ticket-list')}
             onSendMessage={handleSendMessage}
             onAddNote={handleAddNote}
@@ -1608,7 +1614,7 @@ function AppContent() {
       </div>
 
       {/* Bottom nav (mobile) */}
-      {page !== 'login' && page !== 'workspace-select' && (
+      {showShell && (
         <BottomNav
           currentPage={page}
           onNavigate={(p) => setPage(p as Page)}
