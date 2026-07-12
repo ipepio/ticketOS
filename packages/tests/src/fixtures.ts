@@ -290,7 +290,6 @@ export async function cleanDatabase(pool: Pool): Promise<void> {
 
 export async function setupFixtures(): Promise<TestFixtures> {
   const p = await getPool();
-  await ensureMigrations(p);
   await cleanDatabase(p);
 
   const api = await pwRequest.newContext({

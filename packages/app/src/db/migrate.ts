@@ -109,4 +109,7 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// Only run when executed directly, not when imported as a module
+if (process.argv[1] && (process.argv[1].endsWith('migrate.ts') || process.argv[1].endsWith('migrate.js'))) {
+  main();
+}
