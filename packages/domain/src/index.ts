@@ -10,3 +10,4 @@ export * from './integration';
 export * from './catalog';
 export * from './approval';
 export * from './reporting';
+export * from './retention';

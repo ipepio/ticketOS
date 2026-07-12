@@ -55,6 +55,7 @@ describe('KnowledgeBase Module', () => {
 
     await pool.query('DELETE FROM articles');
     await pool.query('DELETE FROM article_categories');
+    await pool.query('DELETE FROM tickets');
     await pool.query('DELETE FROM users');
     await pool.query('DELETE FROM workspaces');
 
