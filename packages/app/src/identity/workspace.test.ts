@@ -123,6 +123,10 @@ describe('Identity + Workspace integration', () => {
     await pool!.query('DELETE FROM organizations');
     await pool!.query('DELETE FROM oidc_accounts');
     await pool!.query('DELETE FROM sessions');
+    await pool!.query('DELETE FROM timeline_entries');
+    await pool!.query('DELETE FROM ticket_followers');
+    await pool!.query('DELETE FROM ticket_tags');
+    await pool!.query('DELETE FROM tickets');
     await pool!.query('DELETE FROM users');
     await pool!.query('DELETE FROM workspaces');
     await pool!.query('DELETE FROM audit_events');

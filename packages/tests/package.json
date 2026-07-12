@@ -1,0 +1,25 @@
+{
+  "name": "@ticketos/tests",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "lint": "eslint e2e/ src/",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf test-results playwright-report"
+  },
+  "dependencies": {
+    "@ticketos/shared": "workspace:*",
+    "@ticketos/domain": "workspace:*",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/pg": "^8.11.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.8.0"
+  }
+}

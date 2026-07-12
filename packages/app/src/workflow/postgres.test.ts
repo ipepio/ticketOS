@@ -143,6 +143,10 @@ describe('Workflow', () => {
     await pool.query('DELETE FROM queues');
     await pool.query('DELETE FROM organizations');
     await pool.query('DELETE FROM workspace_memberships');
+    await pool.query('DELETE FROM timeline_entries');
+    await pool.query('DELETE FROM ticket_followers');
+    await pool.query('DELETE FROM ticket_tags');
+    await pool.query('DELETE FROM tickets');
     await pool.query('DELETE FROM users');
     await pool.query('DELETE FROM workspaces');
     await pool.query('DELETE FROM audit_events');

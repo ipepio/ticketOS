@@ -1,7 +1,35 @@
 -- P0-04: Ticket and immutable Timeline
 
+-- Drop tables and policies created by 003 that 004 redefines
+DROP POLICY IF EXISTS timeline_entries_select ON timeline_entries;
+DROP POLICY IF EXISTS timeline_entries_insert ON timeline_entries;
+DROP POLICY IF EXISTS ticket_followers_select ON ticket_followers;
+DROP POLICY IF EXISTS ticket_followers_insert ON ticket_followers;
+DROP POLICY IF EXISTS ticket_followers_delete ON ticket_followers;
+DROP POLICY IF EXISTS ticket_tags_select ON ticket_tags;
+DROP POLICY IF EXISTS ticket_tags_insert ON ticket_tags;
+DROP POLICY IF EXISTS ticket_tags_delete ON ticket_tags;
+DROP POLICY IF EXISTS tickets_select ON tickets;
+DROP POLICY IF EXISTS tickets_insert ON tickets;
+DROP POLICY IF EXISTS tickets_update ON tickets;
+DROP POLICY IF EXISTS tickets_delete ON tickets;
+
+DROP INDEX IF EXISTS idx_timeline_ticket;
+DROP INDEX IF EXISTS idx_ticket_tags_ticket;
+DROP INDEX IF EXISTS idx_ticket_followers_ticket;
+DROP INDEX IF EXISTS idx_tickets_workspace;
+DROP INDEX IF EXISTS idx_tickets_requester;
+DROP INDEX IF EXISTS idx_tickets_queue;
+DROP INDEX IF EXISTS idx_tickets_assignee;
+
+DROP TABLE IF EXISTS ticket_tag_assignments;
+DROP TABLE IF EXISTS timeline_entries;
+DROP TABLE IF EXISTS ticket_followers;
+DROP TABLE IF EXISTS ticket_tags;
+DROP TABLE IF EXISTS tickets;
+
 -- Tickets
-CREATE TABLE IF NOT EXISTS tickets (
+CREATE TABLE tickets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
@@ -18,13 +46,13 @@ CREATE TABLE IF NOT EXISTS tickets (
     cancelled_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_tickets_workspace ON tickets (workspace_id);
-CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets (workspace_id, status);
-CREATE INDEX IF NOT EXISTS idx_tickets_assigned ON tickets (workspace_id, assigned_to);
-CREATE INDEX IF NOT EXISTS idx_tickets_created_by ON tickets (workspace_id, created_by);
+CREATE INDEX idx_tickets_workspace ON tickets (workspace_id);
+CREATE INDEX idx_tickets_status ON tickets (workspace_id, status);
+CREATE INDEX idx_tickets_assigned ON tickets (workspace_id, assigned_to);
+CREATE INDEX idx_tickets_created_by ON tickets (workspace_id, created_by);
 
 -- Ticket Tags
-CREATE TABLE IF NOT EXISTS ticket_tags (
+CREATE TABLE ticket_tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -32,10 +60,10 @@ CREATE TABLE IF NOT EXISTS ticket_tags (
     UNIQUE(ticket_id, name)
 );
 
-CREATE INDEX IF NOT EXISTS idx_ticket_tags_ticket ON ticket_tags (ticket_id);
+CREATE INDEX idx_ticket_tags_ticket ON ticket_tags (ticket_id);
 
 -- Ticket Followers
-CREATE TABLE IF NOT EXISTS ticket_followers (
+CREATE TABLE ticket_followers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -43,11 +71,11 @@ CREATE TABLE IF NOT EXISTS ticket_followers (
     UNIQUE(ticket_id, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_ticket_followers_ticket ON ticket_followers (ticket_id);
-CREATE INDEX IF NOT EXISTS idx_ticket_followers_user ON ticket_followers (user_id);
+CREATE INDEX idx_ticket_followers_ticket ON ticket_followers (ticket_id);
+CREATE INDEX idx_ticket_followers_user ON ticket_followers (user_id);
 
 -- Timeline Entries (append-only, immutable)
-CREATE TABLE IF NOT EXISTS timeline_entries (
+CREATE TABLE timeline_entries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     kind TEXT NOT NULL CHECK (kind IN ('message', 'internal_note', 'system_event', 'status_change', 'priority_change', 'assignment_change')),
@@ -61,8 +89,8 @@ CREATE TABLE IF NOT EXISTS timeline_entries (
     redact_reason TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_timeline_ticket ON timeline_entries (ticket_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_timeline_kind ON timeline_entries (ticket_id, kind);
+CREATE INDEX idx_timeline_ticket ON timeline_entries (ticket_id, created_at);
+CREATE INDEX idx_timeline_kind ON timeline_entries (ticket_id, kind);
 
 -- RLS: Tickets
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;

@@ -254,12 +254,12 @@ Provider webhooks, bounce/complaint automation, chat, WhatsApp, and social adapt
 
 ### Tasks
 
-1. Complete Audit Event coverage for P0 security, configuration, and Ticket
+1. ✅ Complete Audit Event coverage for P0 security, configuration, and Ticket
    actions; add authorized Workspace/Installation audit views.
-2. Emit P0 metrics/traces/logs and correlation IDs across HTTP, database,
+2. ⏳ Emit P0 metrics/traces/logs and correlation IDs across HTTP, database,
    worker, email, and storage scanning.
-3. Implement backup/restore runbook automation and migration preflight checks.
-4. Add release E2E: two Workspaces, restricted Queue, email Ticket, Attachment,
+3. ✅ Implement backup/restore runbook automation and migration preflight checks.
+4. ✅ Add release E2E: two Workspaces, restricted Queue, email Ticket, Attachment,
    reply, resolution, backup, restore, and audit verification.
 
 ### Acceptance criteria

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { getIdentity } from '../app.js';
+import { getIdentity, getTicket, getWorkflow, getAudit } from '../app.js';
 
 /**
  * Ticket routes — CRUD, timeline, tags, followers
@@ -26,8 +26,11 @@ export async function registerTicketRoutes(
       return reply.status(400).send({ error: 'No workspace selected' });
     }
 
-    // Check capability
-    const hasAccess = await identity.hasCapability(session.userId, workspaceId, 'tickets:read');
+    const hasAccess = await identity.hasCapability(
+      session.userId,
+      workspaceId,
+      'tickets:read',
+    );
     if (!hasAccess) {
       return reply.status(403).send({ error: 'Access denied' });
     }
@@ -38,11 +41,7 @@ export async function registerTicketRoutes(
       assignedTo?: string;
     };
 
-    const ticketModule = (fastify as any).ticketModule;
-    if (!ticketModule) {
-      return reply.status(503).send({ error: 'Ticket module not available' });
-    }
-
+    const ticketModule = getTicket();
     const tickets = await ticketModule.listTickets(workspaceId, {
       status: status as any,
       priority: priority as any,
@@ -66,18 +65,17 @@ export async function registerTicketRoutes(
     }
 
     const ticketId = (request.params as { id: string }).id;
-    const ticketModule = (fastify as any).ticketModule;
-    if (!ticketModule) {
-      return reply.status(503).send({ error: 'Ticket module not available' });
-    }
-
+    const ticketModule = getTicket();
     const ticket = await ticketModule.getTicket(ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
 
-    // Check workspace access
-    const hasAccess = await identity.hasCapability(session.userId, ticket.workspaceId, 'tickets:read');
+    const hasAccess = await identity.hasCapability(
+      session.userId,
+      ticket.workspaceId,
+      'tickets:read',
+    );
     if (!hasAccess) {
       return reply.status(403).send({ error: 'Access denied' });
     }
@@ -103,7 +101,11 @@ export async function registerTicketRoutes(
       return reply.status(400).send({ error: 'No workspace selected' });
     }
 
-    const hasCreate = await identity.hasCapability(session.userId, workspaceId, 'tickets:create');
+    const hasCreate = await identity.hasCapability(
+      session.userId,
+      workspaceId,
+      'tickets:create',
+    );
     if (!hasCreate) {
       return reply.status(403).send({ error: 'Access denied' });
     }
@@ -120,11 +122,7 @@ export async function registerTicketRoutes(
       return reply.status(400).send({ error: 'title is required' });
     }
 
-    const ticketModule = (fastify as any).ticketModule;
-    if (!ticketModule) {
-      return reply.status(503).send({ error: 'Ticket module not available' });
-    }
-
+    const ticketModule = getTicket();
     const ticket = await ticketModule.createTicket({
       workspaceId,
       title: body.title,
@@ -142,6 +140,15 @@ export async function registerTicketRoutes(
       content: `Ticket created by ${session.userId}`,
       authorId: null,
       visibility: 'public',
+    });
+
+    // Audit event
+    const audit = getAudit();
+    await audit.append({
+      kind: 'ticket-created',
+      actorUserId: session.userId,
+      workspaceId,
+      details: { ticketId: ticket.id, title: body.title },
     });
 
     return reply.send(ticket);
@@ -169,17 +176,17 @@ export async function registerTicketRoutes(
       assignedTo?: string;
     };
 
-    const ticketModule = (fastify as any).ticketModule;
-    if (!ticketModule) {
-      return reply.status(503).send({ error: 'Ticket module not available' });
-    }
-
+    const ticketModule = getTicket();
     const ticket = await ticketModule.getTicket(ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
 
-    const hasUpdate = await identity.hasCapability(session.userId, ticket.workspaceId, 'tickets:update');
+    const hasUpdate = await identity.hasCapability(
+      session.userId,
+      ticket.workspaceId,
+      'tickets:update',
+    );
     if (!hasUpdate) {
       return reply.status(403).send({ error: 'Access denied' });
     }
@@ -203,13 +210,39 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const ticketId = (request.params as { id: string }).id;
-    const ticketModule = (fastify as any).ticketModule;
-    if (!ticketModule) {
-      return reply.status(503).send({ error: 'Ticket module not available' });
+    const identity = getIdentity();
+    const session = await identity.getSession(sessionId);
+    if (!session) {
+      return reply.status(401).send({ error: 'Session expired' });
     }
 
-    const entries = await ticketModule.getTimeline(ticketId);
+    const ticketId = (request.params as { id: string }).id;
+    const ticketModule = getTicket();
+
+    const ticket = await ticketModule.getTicket(ticketId);
+    if (!ticket) {
+      return reply.status(404).send({ error: 'Ticket not found' });
+    }
+
+    const hasAccess = await identity.hasCapability(
+      session.userId,
+      ticket.workspaceId,
+      'tickets:read',
+    );
+    if (!hasAccess) {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+
+    // Requesters cannot see internal entries
+    const canSeeInternal = await identity.hasCapability(
+      session.userId,
+      ticket.workspaceId,
+      'tickets:internal-note',
+    );
+
+    const entries = await ticketModule.getTimeline(ticketId, {
+      visibility: canSeeInternal ? undefined : 'public',
+    });
     return reply.send(entries);
   });
 
@@ -237,9 +270,10 @@ export async function registerTicketRoutes(
       return reply.status(400).send({ error: 'kind and content are required' });
     }
 
-    const ticketModule = (fastify as any).ticketModule;
-    if (!ticketModule) {
-      return reply.status(503).send({ error: 'Ticket module not available' });
+    const ticketModule = getTicket();
+    const ticket = await ticketModule.getTicket(ticketId);
+    if (!ticket) {
+      return reply.status(404).send({ error: 'Ticket not found' });
     }
 
     const entry = await ticketModule.appendTimelineEntry({
@@ -267,18 +301,19 @@ export async function registerTicketRoutes(
     }
 
     const ticketId = (request.params as { id: string }).id;
-    const ticketModule = (fastify as any).ticketModule;
-    const workflowModule = (fastify as any).workflowModule;
-    if (!ticketModule || !workflowModule) {
-      return reply.status(503).send({ error: 'Required module not available' });
-    }
+    const ticketModule = getTicket();
+    const _workflowModule = getWorkflow();
 
     const ticket = await ticketModule.getTicket(ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
 
-    const hasClaim = await identity.hasCapability(session.userId, ticket.workspaceId, 'tickets:assign');
+    const hasClaim = await identity.hasCapability(
+      session.userId,
+      ticket.workspaceId,
+      'tickets:assign',
+    );
     if (!hasClaim) {
       return reply.status(403).send({ error: 'Access denied' });
     }

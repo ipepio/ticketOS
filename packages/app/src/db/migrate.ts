@@ -86,3 +86,27 @@ export async function checkMigrationStatus(pool: Pool): Promise<{
     pending,
   };
 }
+
+// ---------------------------------------------------------------------------
+// CLI entry point
+// ---------------------------------------------------------------------------
+async function main(): Promise<void> {
+  const { Pool } = await import('pg');
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error('DATABASE_URL is required');
+    process.exit(1);
+  }
+  const pool = new Pool({ connectionString: url });
+  try {
+    await migrate(pool);
+    console.log('Migrations applied successfully');
+  } catch (err) {
+    console.error('Migration failed:', err);
+    process.exit(1);
+  } finally {
+    await pool.end();
+  }
+}
+
+main();
