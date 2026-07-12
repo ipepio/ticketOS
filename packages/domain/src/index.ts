@@ -14,3 +14,4 @@ export * from './retention';
 export * from './omnichannel';
 export * from './project';
 export * from './problem-change';
+export * from './config';
