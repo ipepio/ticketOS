@@ -22,12 +22,12 @@ story until every linked item's criteria pass through its stated seam.
 | P0-06 | Secure Attachment lifecycle | ✅ Done | P0-04, P0-05 |
 | P0-07 | Inbound/outbound email and Intake Quarantine | ✅ Done | P0-02, P0-04, P0-06 |
 | P0-08 | Audit, operations, recovery, and release evidence | ✅ Done | P0-01 through P0-07 |
-| P1-01 | Business Calendars and SLA | 📋 Ready | P0-03, P0-04, P0-08 |
-| P1-02 | Versioned Forms and configurable Ticket Types | 📋 Ready | P0-03, P0-04 |
-| P1-03 | Automation Rules | 📋 Ready | P0-04, P1-01 |
-| P1-04 | Knowledge Base and Search | 📋 Ready | P0-02, P0-05, P0-06 |
-| P1-05 | Notifications, SSE, i18n, and observability | 📋 Ready | P0-05, P0-08 |
-| P1-06 | Versioned API and signed Webhooks | 📋 Ready | P0-02, P0-04, P0-08 |
+| P1-01 | Business Calendars and SLA | ✅ Done | P0-03, P0-04, P0-08 |
+| P1-02 | Versioned Forms and configurable Ticket Types | ✅ Done | P0-03, P0-04 |
+| P1-03 | Automation Rules | ✅ Done | P0-04, P1-01 |
+| P1-04 | Knowledge Base and Search | ✅ Done | P0-02, P0-05, P0-06 |
+| P1-05 | Notifications, SSE, i18n, and observability | ✅ Done | P0-05, P0-08 |
+| P1-06 | Versioned API and signed Webhooks | ✅ Done | P0-02, P0-04, P0-08 |
 | P2-01 | Service Catalog | 📋 Ready | P1-01, P1-02 |
 | P2-02 | Approval | 📋 Ready | P2-01 |
 | P2-03 | Reporting | 📋 Ready | P1-01, P1-03, P1-06 |

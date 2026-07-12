@@ -29,9 +29,12 @@ CREATE TABLE IF NOT EXISTS form_versions (
 
 CREATE INDEX IF NOT EXISTS idx_form_versions_form ON form_versions (form_id);
 
--- Add FK from forms.current_version_id to form_versions
-ALTER TABLE forms ADD CONSTRAINT forms_current_version_fk
-    FOREIGN KEY (current_version_id) REFERENCES form_versions(id) ON DELETE SET NULL;
+-- Add FK from forms.current_version_id to form_versions (idempotent)
+DO $$ BEGIN
+  ALTER TABLE forms ADD CONSTRAINT forms_current_version_fk
+      FOREIGN KEY (current_version_id) REFERENCES form_versions(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Form Fields (per version)
 CREATE TABLE IF NOT EXISTS form_fields (
