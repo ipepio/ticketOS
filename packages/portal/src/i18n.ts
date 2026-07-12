@@ -317,6 +317,40 @@ export const localeLabels: Record<Locale, Record<string, string>> = {
   },
 };
 
+// -------------------------------------------------------------------------
+// Locale resolver — pure function, no React dependency
+// -------------------------------------------------------------------------
+
+/**
+ * Resolve the initial locale from available sources.
+ * Order:
+ *   1. A valid persisted value (ticketos-locale)
+ *   2. First supported value from browser languages
+ *   3. English fallback
+ *
+ * Supports es, es-*, en, en-*. Unsupported values fall back to English.
+ */
+export function resolveInitialLocale(
+  storedValue: string | null,
+  browserLanguages: readonly string[],
+): Locale {
+  // 1. Stored locale
+  if (storedValue === 'es' || storedValue === 'en') {
+    return storedValue;
+  }
+
+  // 2. Browser languages
+  for (const lang of browserLanguages) {
+    if (lang === 'es') return 'es';
+    if (lang.startsWith('es-')) return 'es';
+    if (lang === 'en') return 'en';
+    if (lang.startsWith('en-')) return 'en';
+  }
+
+  // 3. Fallback
+  return 'en';
+}
+
 export function t(locale: Locale, key: string, vars?: Record<string, string>): string {
   const template = localeLabels[locale]?.[key] ?? localeLabels.en[key] ?? key;
   if (!vars) return template;

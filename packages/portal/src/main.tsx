@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { createRoot } from 'react-dom/client';
-import { localeLabels, t as translate, type Locale } from './i18n';
+import { localeLabels, t as translate, resolveInitialLocale, type Locale } from './i18n';
 import './ticketos.css';
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ const I18nContext = createContext<I18nContextValue>({
 function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocale] = useState<Locale>(() => {
     const saved = localStorage.getItem('ticketos-locale');
-    return (saved === 'es' || saved === 'en') ? saved : 'en';
+    return resolveInitialLocale(saved, navigator.languages);
   });
 
   useEffect(() => {
@@ -1191,12 +1191,15 @@ function BottomNav({ currentPage, onNavigate, isAgent }: { currentPage: string; 
 // ---------------------------------------------------------------------------
 
 function SetupWizard({ onComplete }: { onComplete: () => void }) {
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const [workspaceName, setWorkspaceName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminName, setAdminName] = useState('');
-  const [locale, setLocale] = useState<Locale>('en');
-  const [timezone, setTimezone] = useState('');
+  const [timezone, setTimezone] = useState(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone
+    } catch { return 'UTC'; }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -1287,6 +1290,11 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
         {success && <p className="mt-4 text-center text-small" style={{ color: 'var(--success)' }}>{success}</p>}
         {error && <p className="mt-4 text-center text-small" style={{ color: 'var(--danger)' }} role="alert">{error}</p>}
+
+        <div className="divider" />
+        <div className="flex justify-center items-center gap-2">
+          <LocaleSwitcher />
+        </div>
       </div>
     </main>
   );
