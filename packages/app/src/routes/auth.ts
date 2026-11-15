@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getIdentity, getWorkspace } from '../app.js';
 import type { Config } from '../config.js';
+import { sendMagicLinkEmail } from '../email/smtp.js';
 
 /**
  * Determine whether the cookie Secure flag should be set.
@@ -15,7 +16,7 @@ function isSecure(config: Config): boolean {
   }
 }
 
-function cookieOptions(config: Config, maxAge = 86400) {
+export function cookieOptions(config: Config, maxAge = 60 * 60 * 24 * 30) {
   return {
     path: '/',
     httpOnly: true,
@@ -69,7 +70,8 @@ export async function registerAuthRoutes(
       const result = await identity.requestMagicLink(body.email, workspaceId as any);
       // Build the full magic-link URL that the email should contain
       const verifyUrl = `${config.PUBLIC_APP_URL}/?token=${result.token}`;
-      fastify.log.info({ email: body.email, verifyUrl }, 'Magic link issued');
+      await sendMagicLinkEmail(config, { to: body.email, verifyUrl });
+      fastify.log.info({ email: body.email }, 'Magic link sent');
       return reply.send({ message: 'Magic link sent' });
     } catch (err) {
       fastify.log.error({ err }, 'Magic link request failed');
@@ -122,8 +124,14 @@ export async function registerAuthRoutes(
     const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
+      reply.clearCookie('sessionId', { path: '/' });
       return reply.send({ authenticated: false });
     }
+
+    // Keep an actively used browser signed in. The server-side expiry and
+    // cookie are renewed together, rather than forcing a new magic link daily.
+    await identity.refreshSession(sessionId);
+    reply.setCookie('sessionId', sessionId, cookieOptions(config));
 
     // Enrich memberships for the Workspace selector without exposing other
     // Workspaces to an unauthenticated caller.

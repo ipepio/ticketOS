@@ -1,14 +1,15 @@
 import type { Config } from './config.js';
 import { initDb, closeDb, getPool } from './db/connection.js';
 import { migrate } from './db/migrate.js';
-import { registerAuthRoutes, registerTicketRoutes, registerSetupRoutes } from './routes/index.js';
+import { registerAdminConfigRoutes, registerAdminQueueRoutes, registerAdminRoutes, registerAuthRoutes, registerTicketRoutes, registerSetupRoutes } from './routes/index.js';
 import { registerRootRoute } from './routes/root.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { PostgresOutbox } from './db/outbox.js';
 import { PostgresAudit } from './db/audit.js';
 import { PostgresIdentity } from './identity/postgres.js';
 import { PostgresWorkspace } from './workspace/postgres.js';
-import { PostgresWorkflow } from './workflow/postgres.js';
+import { PostgresWorkflowConfiguration } from './workflow/config-module.js';
+import type { WorkflowConfigurationModule } from '@ticketos/domain';
 import { PostgresTicket } from './ticket/postgres.js';
 import type { OutboxModule, AuditModule } from '@ticketos/domain';
 import fastify from 'fastify';
@@ -26,7 +27,7 @@ let outbox: OutboxModule | null = null;
 let audit: AuditModule | null = null;
 let identity: PostgresIdentity | null = null;
 let workspace: PostgresWorkspace | null = null;
-let workflow: PostgresWorkflow | null = null;
+let workflowConfiguration: WorkflowConfigurationModule | null = null;
 let ticket: PostgresTicket | null = null;
 
 export function getTicket(): PostgresTicket {
@@ -64,11 +65,11 @@ export function getWorkspace(): PostgresWorkspace {
   return workspace;
 }
 
-export function getWorkflow(): PostgresWorkflow {
-  if (!workflow) {
-    throw new Error('Workflow not initialized. Call initApp() first.');
+export function getWorkflowConfiguration(): WorkflowConfigurationModule {
+  if (!workflowConfiguration) {
+    workflowConfiguration = new PostgresWorkflowConfiguration(getPool());
   }
-  return workflow;
+  return workflowConfiguration;
 }
 
 export async function initApp(config: Config): Promise<{
@@ -83,7 +84,6 @@ export async function initApp(config: Config): Promise<{
   audit = new PostgresAudit(getPool());
   identity = new PostgresIdentity(getPool(), outbox, audit);
   workspace = new PostgresWorkspace(getPool());
-  workflow = new PostgresWorkflow(getPool());
   ticket = new PostgresTicket(getPool());
 
   // Create Fastify instance
@@ -110,6 +110,21 @@ export async function initApp(config: Config): Promise<{
   });
   await app.register(fastifyCookie);
 
+  // Serve the built portal before any route registration: Fastify resolves the
+  // first matching route, so a late static registration would lose '/' to the
+  // API root handler.
+  const portalDist = join(__dirname, '../../portal/dist');
+  let portalServed = false;
+  try {
+    await readFile(join(portalDist, 'index.html'));
+    await app.register(fastifyStatic, { root: portalDist, prefix: '/', wildcard: false });
+    portalServed = true;
+  } catch (err) {
+    // The portal bundle is optional in development, but never fail silently:
+    // an E2E or production run must know the browser UI is missing.
+    app.log.warn({ err, portalDist }, 'portal bundle not found — static serving disabled');
+  }
+
   // Register routes
   await app.register(registerRootRoute);
   await app.register(registerHealthRoutes);
@@ -117,18 +132,20 @@ export async function initApp(config: Config): Promise<{
     await registerAuthRoutes(fastify, config);
     await registerTicketRoutes(fastify, config);
     await registerSetupRoutes(fastify, config);
+    await registerAdminRoutes(fastify, config);
+    await registerAdminConfigRoutes(fastify, config);
+    await registerAdminQueueRoutes(fastify, config);
   });
 
-  // Serve built portal (if exists)
-  const portalDist = join(__dirname, '../../../../portal/dist');
-  try {
-    await readFile(join(portalDist, 'index.html'));
-    await app.register(fastifyStatic, {
-      root: portalDist,
-      prefix: '/',
+  // Client-side routing fallback: any non-API GET that did not match a file
+  // returns the portal shell so a deep link works after a reload.
+  if (portalServed) {
+    app.setNotFoundHandler(async (request, reply) => {
+      if (request.method !== 'GET' || request.url.startsWith('/api/')) {
+        return reply.status(404).send({ error: 'Not Found' });
+      }
+      return reply.type('text/html').send(await readFile(join(portalDist, 'index.html')));
     });
-  } catch {
-    // Portal not built yet — skip static serving
   }
 
   // Error handler

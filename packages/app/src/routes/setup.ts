@@ -3,13 +3,14 @@ import type { FastifyInstance } from 'fastify';
 import { getPool } from '../db/connection.js';
 import { getAudit } from '../app.js';
 import type { Config } from '../config.js';
+import { cookieOptions } from './auth.js';
 
 /**
  * Setup routes — first-run onboarding wizard
  */
 export async function registerSetupRoutes(
   fastify: FastifyInstance,
-  _config: Config,
+  config: Config,
 ): Promise<void> {
   // GET /api/setup/status — is this installation configured?
   fastify.get('/api/setup/status', async (_request, reply) => {
@@ -75,46 +76,46 @@ export async function registerSetupRoutes(
       // 4. Create default Inbox queue
       await client.query(
         `INSERT INTO queues (workspace_id, name, access_mode)
-         VALUES ($1, 'Inbox', 'open')`,
+         VALUES ($1, 'Inbox', 'workspace-agents')`,
         [workspaceId],
       );
 
       // 5. Provision defaults (statuses, priorities, ticket types)
       const defaultStatuses = [
-        { name: 'New', category: 'new' },
-        { name: 'Open', category: 'open' },
-        { name: 'Pending', category: 'pending' },
-        { name: 'Resolved', category: 'resolved' },
-        { name: 'Closed', category: 'closed' },
+        { name: 'New', category: 'new', sortOrder: 1 },
+        { name: 'Open', category: 'open', sortOrder: 2 },
+        { name: 'Pending', category: 'pending', sortOrder: 3 },
+        { name: 'Resolved', category: 'resolved', sortOrder: 4 },
+        { name: 'Closed', category: 'closed', sortOrder: 5 },
       ];
       for (const s of defaultStatuses) {
         await client.query(
-          `INSERT INTO statuses (workspace_id, name, category, is_default)
-           VALUES ($1, $2, $3, true)
+          `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+           VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT DO NOTHING`,
-          [workspaceId, s.name, s.category],
+          [workspaceId, s.name, s.category, s.sortOrder, s.name === 'New'],
         );
       }
 
       const defaultPriorities = [
-        { name: 'critical', sortOrder: 0 },
-        { name: 'high', sortOrder: 1 },
-        { name: 'normal', sortOrder: 2 },
-        { name: 'low', sortOrder: 3 },
+        { name: 'critical', sortOrder: 1 },
+        { name: 'high', sortOrder: 2 },
+        { name: 'normal', sortOrder: 3 },
+        { name: 'low', sortOrder: 4 },
       ];
       for (const p of defaultPriorities) {
         await client.query(
           `INSERT INTO priorities (workspace_id, name, sort_order, is_default)
-           VALUES ($1, $2, $3, true)
+           VALUES ($1, $2, $3, $4)
            ON CONFLICT DO NOTHING`,
-          [workspaceId, p.name, p.sortOrder],
+          [workspaceId, p.name, p.sortOrder, p.name === 'normal'],
         );
       }
 
       await client.query(
-        `INSERT INTO ticket_types (workspace_id, name, category, is_default)
-         VALUES ($1, 'Incident', 'incident', true),
-                ($1, 'Service Request', 'service-request', false)
+        `INSERT INTO ticket_types (workspace_id, name, category, sort_order, is_default)
+         VALUES ($1, 'Incident', 'incident', 1, true),
+                ($1, 'Service Request', 'service-request', 2, false)
          ON CONFLICT DO NOTHING`,
         [workspaceId],
       );
@@ -141,7 +142,7 @@ export async function registerSetupRoutes(
       const sessionId = crypto.randomUUID();
       await client.query(
         `INSERT INTO sessions (id, user_id, workspace_id, data, expires_at)
-         VALUES ($1, $2, $3, '{}', NOW() + INTERVAL '24 hours')`,
+         VALUES ($1, $2, $3, '{}', NOW() + INTERVAL '30 days')`,
         [sessionId, userId, workspaceId],
       );
 
@@ -155,9 +156,9 @@ export async function registerSetupRoutes(
 
       await client.query('COMMIT');
 
+      reply.setCookie('sessionId', sessionId, cookieOptions(config));
       return reply.send({
         workspaceId,
-        sessionId,
         message: 'Installation configured.',
       });
     } catch (err) {

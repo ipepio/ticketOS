@@ -13,35 +13,87 @@ import type {
   TicketStatus,
 } from '@ticketos/domain';
 import type { UserId } from '@ticketos/shared';
+import { ConfigurationNotFoundError } from '@ticketos/domain';
 
 export class PostgresTicket implements TicketModule {
   constructor(private pool: Pool) {}
 
   async createTicket(input: CreateTicketInput): Promise<Ticket> {
+    if (!input.ticketTypeId) {
+      throw new Error('Ticket Type is required to create a Ticket');
+    }
+    if (!input.priorityId) {
+      throw new Error('Ticket Priority is required to create a Ticket');
+    }
+
+    // Validate Ticket Type belongs to this Workspace and is active
+    const { rows: typeRows } = await this.pool.query(
+      `SELECT id FROM ticket_types
+       WHERE id = $1 AND workspace_id = $2 AND is_active = true`,
+      [input.ticketTypeId, input.workspaceId],
+    );
+    if (typeRows.length === 0) {
+      throw new ConfigurationNotFoundError(
+        'Ticket Type not found or inactive in this Workspace',
+      );
+    }
+
+    // Validate Priority belongs to this Workspace and is active
+    const { rows: prioRows } = await this.pool.query(
+      `SELECT id FROM priorities
+       WHERE id = $1 AND workspace_id = $2 AND is_active = true`,
+      [input.priorityId, input.workspaceId],
+    );
+    if (prioRows.length === 0) {
+      throw new ConfigurationNotFoundError(
+        'Priority not found or inactive in this Workspace',
+      );
+    }
+    // ADR 0010: exactly one active Queue per Ticket. Resolve the target Queue
+    // explicitly so a Ticket never lands unrouted with queue_id NULL, which
+    // makes it invisible to every Queue view.
+    let queueId = input.queueId ?? null;
+    if (queueId) {
+      const { rows: qRows } = await this.pool.query(
+        `SELECT id FROM queues WHERE id = $1 AND workspace_id = $2`,
+        [queueId, input.workspaceId],
+      );
+      if (qRows.length === 0) {
+        throw new ConfigurationNotFoundError('Queue not found in this Workspace');
+      }
+    } else {
+      const { rows: qRows } = await this.pool.query<{ id: string }>(
+        `SELECT id FROM queues WHERE workspace_id = $1 ORDER BY created_at LIMIT 1`,
+        [input.workspaceId],
+      );
+      queueId = qRows[0]?.id ?? null;
+    }
+
     const { rows } = await this.pool.query(
-      `INSERT INTO tickets (workspace_id, title, description, status, priority, ticket_type_id, created_by, assigned_to, visibility, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-       RETURNING id, workspace_id, title, description, status, priority, ticket_type_id, created_by, assigned_to, visibility, created_at, updated_at`,
+      `INSERT INTO tickets (workspace_id, title, description, status, priority, ticket_type_id, priority_id, queue_id, created_by, assigned_to, visibility, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+       RETURNING id, workspace_id, title, description, status, priority, ticket_type_id, priority_id, queue_id, created_by, assigned_to, visibility, created_at, updated_at`,
       [
         input.workspaceId,
         input.title,
         input.description ?? null,
         'backlog',
         input.priority ?? 'normal',
-        input.ticketTypeId ?? null,
+        input.ticketTypeId,
+        input.priorityId,
+        queueId,
         input.createdBy,
         input.assignedTo ?? null,
         input.visibility ?? 'public',
       ],
-    );
-    return this.mapTicket(rows[0]!);
+    );    return this.mapTicket(rows[0]!);
   }
 
-  async getTicket(id: string): Promise<Ticket | null> {
+  async getTicket(workspaceId: string, id: string): Promise<Ticket | null> {
     const { rows } = await this.pool.query(
-      `SELECT id, workspace_id, title, description, status, priority, ticket_type_id, created_by, assigned_to, visibility, created_at, updated_at
-       FROM tickets WHERE id = $1`,
-      [id],
+      `SELECT id, workspace_id, title, description, status, priority, ticket_type_id, priority_id, created_by, assigned_to, visibility, created_at, updated_at
+       FROM tickets WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, id],
     );
     return rows.length === 0 ? null : this.mapTicket(rows[0]!);
   }
@@ -55,6 +107,7 @@ export class PostgresTicket implements TicketModule {
     if (input.description !== undefined) { sets.push(`description = $${idx++}`); values.push(input.description); }
     if (input.status !== undefined) { sets.push(`status = $${idx++}`); values.push(input.status); }
     if (input.priority !== undefined) { sets.push(`priority = $${idx++}`); values.push(input.priority); }
+    if (input.priorityId !== undefined) { sets.push(`priority_id = $${idx++}`); values.push(input.priorityId); }
     if (input.ticketTypeId !== undefined) { sets.push(`ticket_type_id = $${idx++}`); values.push(input.ticketTypeId); }
     if (input.assignedTo !== undefined) { sets.push(`assigned_to = $${idx++}`); values.push(input.assignedTo); }
     if (input.visibility !== undefined) { sets.push(`visibility = $${idx++}`); values.push(input.visibility); }
@@ -64,14 +117,17 @@ export class PostgresTicket implements TicketModule {
 
     const { rows } = await this.pool.query(
       `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx}
-       RETURNING id, workspace_id, title, description, status, priority, ticket_type_id, created_by, assigned_to, visibility, created_at, updated_at`,
+       RETURNING id, workspace_id, title, description, status, priority, ticket_type_id, priority_id, created_by, assigned_to, visibility, created_at, updated_at`,
       values,
     );
     return this.mapTicket(rows[0]!);
   }
 
-  async deleteTicket(id: string): Promise<void> {
-    await this.pool.query('DELETE FROM tickets WHERE id = $1', [id]);
+  async deleteTicket(workspaceId: string, id: string): Promise<void> {
+    await this.pool.query(
+      'DELETE FROM tickets WHERE workspace_id = $1 AND id = $2',
+      [workspaceId, id],
+    );
   }
 
   async listTickets(workspaceId: string, filters?: {
@@ -216,9 +272,9 @@ export class PostgresTicket implements TicketModule {
    * Cancel a ticket. Only the ticket creator can cancel their own ticket.
    * Cancellation is terminal — the status becomes 'cancelled'.
    */
-  async cancelTicket(ticketId: string, userId: UserId): Promise<Ticket> {
+  async cancelTicket(workspaceId: string, ticketId: string, userId: UserId): Promise<Ticket> {
     // Verify the ticket exists and the user is the creator
-    const existing = await this.getTicket(ticketId);
+    const existing = await this.getTicket(workspaceId, ticketId);
     if (!existing) {
       throw new Error(`Ticket not found: ${ticketId}`);
     }
@@ -254,6 +310,7 @@ export class PostgresTicket implements TicketModule {
       status: row.status as TicketStatus,
       priority: row.priority as TicketPriority,
       ticketTypeId: row.ticket_type_id,
+      priorityId: row.priority_id,
       createdBy: row.created_by,
       assignedTo: row.assigned_to,
       visibility: row.visibility as TicketVisibility,

@@ -1,5 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { getIdentity, getTicket, getWorkflow, getAudit } from '../app.js';
+import { getIdentity, getTicket, getAudit } from '../app.js';
+import { z } from 'zod';
+import { ConfigurationNotFoundError } from '@ticketos/domain';
+import { PostgresWorkflowConfiguration } from '../workflow/config-module.js';
+import { getPool } from '../db/connection.js';
 
 /**
  * Ticket routes — CRUD, timeline, tags, followers
@@ -64,9 +68,14 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Session expired' });
     }
 
+    const workspaceId = session.workspaceId;
+    if (!workspaceId) {
+      return reply.status(400).send({ error: 'No workspace selected' });
+    }
+
     const ticketId = (request.params as { id: string }).id;
     const ticketModule = getTicket();
-    const ticket = await ticketModule.getTicket(ticketId);
+    const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
@@ -83,7 +92,40 @@ export async function registerTicketRoutes(
     return reply.send(ticket);
   });
 
-  // POST /api/tickets — create ticket
+  // GET /api/tickets/selectable-configuration — active types & priorities (S9)
+  fastify.get('/api/tickets/selectable-configuration', async (request, reply) => {
+    const sessionId = request.cookies.sessionId;
+    if (!sessionId) {
+      return reply.status(401).send({ error: 'Authentication required' });
+    }
+
+    const identity = getIdentity();
+    const session = await identity.getSession(sessionId);
+    if (!session) {
+      return reply.status(401).send({ error: 'Session expired' });
+    }
+
+    const workspaceId = session.workspaceId;
+    if (!workspaceId) {
+      return reply.status(400).send({ error: 'No workspace selected' });
+    }
+
+    // S9: tickets:create capability required
+    const hasAccess = await identity.hasCapability(
+      session.userId,
+      workspaceId,
+      'tickets:create',
+    );
+    if (!hasAccess) {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+
+    const configModule = new PostgresWorkflowConfiguration(getPool());
+    const config = await configModule.listSelectableConfiguration(workspaceId);
+    return reply.send(config);
+  });
+
+  // POST /api/tickets — create ticket (T8: S9, S2, S5)
   fastify.post('/api/tickets', async (request, reply) => {
     const sessionId = request.cookies.sessionId;
     if (!sessionId) {
@@ -114,6 +156,7 @@ export async function registerTicketRoutes(
       title: string;
       description?: string;
       priority?: string;
+      priorityId?: string;
       ticketTypeId?: string;
       assignedTo?: string;
     };
@@ -122,36 +165,99 @@ export async function registerTicketRoutes(
       return reply.status(400).send({ error: 'title is required' });
     }
 
-    const ticketModule = getTicket();
-    const ticket = await ticketModule.createTicket({
-      workspaceId,
-      title: body.title,
-      description: body.description || null,
-      priority: (body.priority as any) || 'normal',
-      ticketTypeId: body.ticketTypeId || null,
-      createdBy: session.userId,
-      assignedTo: body.assignedTo || null,
-    });
+    // Fetch active configuration (S9, S2 — workspace-isolated)
+    const configModule = new PostgresWorkflowConfiguration(getPool());
+    const config = await configModule.listSelectableConfiguration(workspaceId);
 
-    // Append system event to timeline
-    await ticketModule.appendTimelineEntry({
-      ticketId: ticket.id,
-      kind: 'system_event',
-      content: `Ticket created by ${session.userId}`,
-      authorId: null,
-      visibility: 'public',
-    });
+    // Validate & resolve ticketTypeId (S9)
+    if (body.ticketTypeId !== undefined) {
+      if (!z.string().uuid().safeParse(body.ticketTypeId).success) {
+        return reply.status(400).send({ error: 'Invalid ticketTypeId format' });
+      }
+      if (!config.ticketTypes.some(t => t.id === body.ticketTypeId)) {
+        return reply.status(400).send({
+          error: 'Ticket Type not found or inactive', code: 'not-found',
+        });
+      }
+    }
 
-    // Audit event
-    const audit = getAudit();
-    await audit.append({
-      kind: 'ticket-created',
-      actorUserId: session.userId,
-      workspaceId,
-      details: { ticketId: ticket.id, title: body.title },
-    });
+    // Validate & resolve priorityId (S9)
+    if (body.priorityId !== undefined) {
+      if (!z.string().uuid().safeParse(body.priorityId).success) {
+        return reply.status(400).send({ error: 'Invalid priorityId format' });
+      }
+      if (!config.priorities.some(p => p.id === body.priorityId)) {
+        return reply.status(400).send({
+          error: 'Priority not found or inactive', code: 'not-found',
+        });
+      }
+    }
 
-    return reply.send(ticket);
+    // Resolve defaults for missing IDs (S5 — active default per Workspace)
+    const resolvedTicketTypeId = body.ticketTypeId
+      ?? config.ticketTypes.find(t => t.isDefault)?.id
+      ?? null;
+    if (resolvedTicketTypeId === null) {
+      return reply.status(400).send({
+        error: 'ticketTypeId is required',
+        code: 'not-found',
+        details: 'No default ticket type and no value provided — selection is required',
+      });
+    }
+
+    const resolvedPriorityId = body.priorityId
+      ?? config.priorities.find(p => p.isDefault)?.id
+      ?? null;
+    if (resolvedPriorityId === null) {
+      return reply.status(400).send({
+        error: 'priorityId is required',
+        code: 'not-found',
+        details: 'No default priority and no value provided — selection is required',
+      });
+    }
+
+    // Create ticket (DB validates workspace ownership; catch maps to 400)
+    try {
+      const ticketModule = getTicket();
+      const ticket = await ticketModule.createTicket({
+        workspaceId,
+        title: body.title,
+        description: body.description ?? null,
+        priority: (body.priority as any) ?? 'normal',
+        priorityId: resolvedPriorityId,
+        ticketTypeId: resolvedTicketTypeId,
+        createdBy: session.userId,
+        assignedTo: body.assignedTo ?? null,
+      });
+
+      // Append system event to timeline
+      await ticketModule.appendTimelineEntry({
+        ticketId: ticket.id,
+        kind: 'system_event',
+        content: `Ticket created by ${session.userId}`,
+        authorId: null,
+        visibility: 'public',
+      });
+
+      // Audit event
+      const audit = getAudit();
+      await audit.append({
+        kind: 'ticket-created',
+        actorUserId: session.userId,
+        workspaceId,
+        details: { ticketId: ticket.id, title: body.title },
+      });
+
+      return reply.send(ticket);
+    } catch (err) {
+      if (err instanceof ConfigurationNotFoundError) {
+        return reply.status(400).send({
+          error: err.message,
+          code: err.code,
+        });
+      }
+      throw err;
+    }
   });
 
   // PUT /api/tickets/:id — update ticket
@@ -167,17 +273,23 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Session expired' });
     }
 
+    const workspaceId = session.workspaceId;
+    if (!workspaceId) {
+      return reply.status(400).send({ error: 'No workspace selected' });
+    }
+
     const ticketId = (request.params as { id: string }).id;
     const body = request.body as {
       title?: string;
       description?: string;
       status?: string;
       priority?: string;
+      priorityId?: string;
       assignedTo?: string;
     };
 
     const ticketModule = getTicket();
-    const ticket = await ticketModule.getTicket(ticketId);
+    const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
@@ -197,6 +309,7 @@ export async function registerTicketRoutes(
       description: body.description,
       status: body.status as any,
       priority: body.priority as any,
+      priorityId: body.priorityId ?? undefined,
       assignedTo: body.assignedTo,
     });
 
@@ -216,10 +329,15 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Session expired' });
     }
 
+    const workspaceId = session.workspaceId;
+    if (!workspaceId) {
+      return reply.status(400).send({ error: 'No workspace selected' });
+    }
+
     const ticketId = (request.params as { id: string }).id;
     const ticketModule = getTicket();
 
-    const ticket = await ticketModule.getTicket(ticketId);
+    const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
@@ -259,6 +377,11 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Session expired' });
     }
 
+    const workspaceId = session.workspaceId;
+    if (!workspaceId) {
+      return reply.status(400).send({ error: 'No workspace selected' });
+    }
+
     const ticketId = (request.params as { id: string }).id;
     const body = request.body as {
       kind: string;
@@ -271,7 +394,7 @@ export async function registerTicketRoutes(
     }
 
     const ticketModule = getTicket();
-    const ticket = await ticketModule.getTicket(ticketId);
+    const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
@@ -300,11 +423,15 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Session expired' });
     }
 
+    const workspaceId = session.workspaceId;
+    if (!workspaceId) {
+      return reply.status(400).send({ error: 'No workspace selected' });
+    }
+
     const ticketId = (request.params as { id: string }).id;
     const ticketModule = getTicket();
-    const _workflowModule = getWorkflow();
 
-    const ticket = await ticketModule.getTicket(ticketId);
+    const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
