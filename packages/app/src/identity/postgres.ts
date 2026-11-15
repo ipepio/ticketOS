@@ -15,7 +15,7 @@ import type {
   Role,
 } from '@ticketos/shared';
 
-const CAPABILITY_MAP: Record<Role, Capability[]> = {
+export const CAPABILITY_MAP: Record<Role, Capability[]> = {
   'installation-admin': [
     'admin:installation',
     'workspaces:manage',
@@ -285,7 +285,7 @@ export class PostgresIdentity implements IdentityModule {
     data: Record<string, unknown> = {},
   ): Promise<string> {
     const sessionId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     await this.pool.query(
       `INSERT INTO sessions (id, user_id, workspace_id, data, expires_at)
@@ -318,6 +318,19 @@ export class PostgresIdentity implements IdentityModule {
       data: r.data as Record<string, unknown>,
       expiresAt: r.expires_at,
     };
+  }
+
+  async refreshSession(sessionId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE sessions SET expires_at = NOW() + INTERVAL '30 days'
+       WHERE id = $1 AND expires_at > NOW()`,
+      [sessionId],
+    );
+    await this.pool.query(
+      `UPDATE users SET last_seen_at = NOW()
+       WHERE id = (SELECT user_id FROM sessions WHERE id = $1)`,
+      [sessionId],
+    );
   }
 
   async deleteSession(sessionId: string): Promise<void> {

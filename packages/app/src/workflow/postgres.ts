@@ -86,49 +86,49 @@ export class PostgresWorkflow {
 
       // Default statuses
       const defaultStatuses = [
-        { name: 'New', category: 'new', sortOrder: 0 },
-        { name: 'Open', category: 'open', sortOrder: 1 },
-        { name: 'Pending', category: 'pending', sortOrder: 2 },
-        { name: 'Resolved', category: 'resolved', sortOrder: 3 },
-        { name: 'Closed', category: 'closed', sortOrder: 4 },
+        { name: 'New', category: 'new', sortOrder: 1 },
+        { name: 'Open', category: 'open', sortOrder: 2 },
+        { name: 'Pending', category: 'pending', sortOrder: 3 },
+        { name: 'Resolved', category: 'resolved', sortOrder: 4 },
+        { name: 'Closed', category: 'closed', sortOrder: 5 },
       ];
 
       for (const s of defaultStatuses) {
         await client.query(
-          `INSERT INTO statuses (workspace_id, name, category, is_default)
-           VALUES ($1, $2, $3, true)`,
-          [workspaceId, s.name, s.category],
+          `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [workspaceId, s.name, s.category, s.sortOrder, s.name === 'New'],
         );
       }
 
       // Default priorities
       const defaultPriorities = [
-        { name: 'critical', sortOrder: 0 },
-        { name: 'high', sortOrder: 1 },
-        { name: 'normal', sortOrder: 2 },
-        { name: 'low', sortOrder: 3 },
+        { name: 'critical', sortOrder: 1 },
+        { name: 'high', sortOrder: 2 },
+        { name: 'normal', sortOrder: 3 },
+        { name: 'low', sortOrder: 4 },
       ];
 
       for (const p of defaultPriorities) {
         await client.query(
           `INSERT INTO priorities (workspace_id, name, sort_order, is_default)
-           VALUES ($1, $2, $3, true)`,
-          [workspaceId, p.name, p.sortOrder],
+           VALUES ($1, $2, $3, $4)`,
+          [workspaceId, p.name, p.sortOrder, p.name === 'normal'],
         );
       }
 
       // Default ticket types
       await client.query(
-        `INSERT INTO ticket_types (workspace_id, name, category, is_default)
-         VALUES ($1, 'Incident', 'incident', true),
-                ($1, 'Service Request', 'service-request', true)`,
+        `INSERT INTO ticket_types (workspace_id, name, category, sort_order, is_default)
+         VALUES ($1, 'Incident', 'incident', 1, true),
+                ($1, 'Service Request', 'service-request', 2, false)`,
         [workspaceId],
       );
 
       // Default Inbox Queue
       await client.query(
         `INSERT INTO queues (workspace_id, name, access_mode)
-         VALUES ($1, 'Inbox', 'open')`,
+         VALUES ($1, 'Inbox', 'workspace-agents')`,
         [workspaceId],
       );
 
