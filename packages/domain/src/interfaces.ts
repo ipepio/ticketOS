@@ -139,11 +139,11 @@ export interface Queue {
   id: QueueId;
   workspaceId: WorkspaceId;
   name: string;
-  accessMode: 'open' | 'restricted';
+  accessMode: QueueAccessMode;
   createdAt: string;
 }
 
-export type QueueAccessMode = 'open' | 'restricted';
+export type QueueAccessMode = 'workspace-agents' | 'restricted';
 
 export interface CreateWorkspaceInput {
   name: string;
@@ -157,13 +157,29 @@ export interface CreateOrganizationInput {
 export interface CreateQueueInput {
   workspaceId: WorkspaceId;
   name: string;
-  accessMode?: 'open' | 'restricted';
+  accessMode?: QueueAccessMode;
 }
 
 export interface AddQueueMemberInput {
   workspaceId: WorkspaceId;
   queueId: QueueId;
   userId: UserId;
+}
+
+export interface QueueMember {
+  userId: UserId;
+  displayName: string | null;
+  email: string;
+  role: Role;
+  capabilities: Capability[];
+}
+
+export interface QueueDetail {
+  id: QueueId;
+  name: string;
+  accessMode: QueueAccessMode;
+  memberCount: number;
+  activeTicketCount: number;
 }
 
 export interface WorkspaceModule {
@@ -174,18 +190,61 @@ export interface WorkspaceModule {
   getOrganizations(workspaceId: WorkspaceId): Promise<Organization[]>;
   getOrganization(id: string): Promise<Organization | null>;
 
-  createQueue(input: CreateQueueInput): Promise<Queue>;
-  getQueue(id: QueueId): Promise<Queue | null>;
-  getQueues(workspaceId: WorkspaceId): Promise<Queue[]>;
+  createQueue(
+    workspaceId: WorkspaceId,
+    actorId: UserId,
+    input: Omit<CreateQueueInput, 'workspaceId'>,
+  ): Promise<Queue>;
 
-  addQueueMember(input: AddQueueMemberInput): Promise<void>;
-  removeQueueMember(workspaceId: WorkspaceId, queueId: QueueId, userId: UserId): Promise<void>;
-  getQueueMembers(queueId: QueueId): Promise<UserId[]>;
+  updateQueue(
+    workspaceId: WorkspaceId,
+    actorId: UserId,
+    queueId: QueueId,
+    input: { name?: string; accessMode?: QueueAccessMode },
+  ): Promise<Queue>;
+
+  getQueue(id: QueueId): Promise<Queue | null>;
+  listQueues(workspaceId: WorkspaceId): Promise<QueueDetail[]>;
+
+  addQueueMember(
+    workspaceId: WorkspaceId,
+    actorId: UserId,
+    queueId: QueueId,
+    userId: UserId,
+  ): Promise<void>;
+
+  removeQueueMember(
+    workspaceId: WorkspaceId,
+    actorId: UserId,
+    queueId: QueueId,
+    userId: UserId,
+  ): Promise<void>;
+
+  getQueueMembers(
+    workspaceId: WorkspaceId,
+    queueId: QueueId,
+  ): Promise<QueueMember[]>;
 
   /**
    * Check if a user is a member of a queue (for restricted queues).
    */
   isQueueMember(queueId: QueueId, userId: UserId): Promise<boolean>;
+
+  /**
+   * Check whether a user may access a queue.
+   *
+   * Returns true when:
+   *  - the queue is `workspace-agents` and the user has an active
+   *    membership with `agent` capability, or
+   *  - the queue is `restricted` and the user is an explicit member,
+   *  - the user is a Workspace Admin (always manages a restricted Queue
+   *    regardless of explicit Queue Membership).
+   */
+  canAccessQueue(
+    workspaceId: WorkspaceId,
+    userId: UserId,
+    queueId: QueueId,
+  ): Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +339,7 @@ export interface Ticket {
   status: TicketStatus;
   priority: TicketPriority;
   ticketTypeId: string | null;
+  priorityId: string | null;
   createdBy: UserId;
   assignedTo: UserId | null;
   visibility: TicketVisibility;
@@ -292,7 +352,10 @@ export interface CreateTicketInput {
   title: string;
   description?: string | null;
   priority?: TicketPriority;
+  priorityId?: string | null;
   ticketTypeId?: string | null;
+  /** Target Queue. When omitted the Workspace's first Queue is used (ADR 0010). */
+  queueId?: QueueId | null;
   createdBy: UserId;
   assignedTo?: UserId | null;
   visibility?: TicketVisibility;
@@ -304,6 +367,7 @@ export interface UpdateTicketInput {
   description?: string | null;
   status?: TicketStatus;
   priority?: TicketPriority;
+  priorityId?: string | null;
   ticketTypeId?: string | null;
   assignedTo?: UserId | null;
   visibility?: TicketVisibility;
@@ -335,9 +399,9 @@ export interface TimelineEntry {
 
 export interface TicketModule {
   createTicket(input: CreateTicketInput): Promise<Ticket>;
-  getTicket(id: string): Promise<Ticket | null>;
+  getTicket(workspaceId: WorkspaceId, id: string): Promise<Ticket | null>;
   updateTicket(input: UpdateTicketInput): Promise<Ticket>;
-  deleteTicket(id: string): Promise<void>;
+  deleteTicket(workspaceId: WorkspaceId, id: string): Promise<void>;
   listTickets(workspaceId: WorkspaceId, filters?: {
     status?: TicketStatus;
     priority?: TicketPriority;
@@ -373,5 +437,5 @@ export interface TicketModule {
    * their own eligible Service Request. Cancellation is terminal —
    * the ticket status becomes 'cancelled' and cannot be transitioned.
    */
-  cancelTicket(ticketId: string, userId: UserId): Promise<Ticket>;
+  cancelTicket(workspaceId: WorkspaceId, ticketId: string, userId: UserId): Promise<Ticket>;
 }
