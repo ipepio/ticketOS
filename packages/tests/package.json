@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "playwright test",
-    "test:e2e": "playwright test",
+    "test": "E2E_DATABASE_URL=postgresql://ticketos:ticketos@localhost:15433/ticketos_e2e PLAYWRIGHT_BASE_URL=http://localhost:3021 playwright test",
+    "test:e2e": "E2E_DATABASE_URL=postgresql://ticketos:ticketos@localhost:15433/ticketos_e2e PLAYWRIGHT_BASE_URL=http://localhost:3021 playwright test",
     "lint": "eslint e2e/ src/",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf test-results playwright-report"

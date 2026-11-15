@@ -26,6 +26,8 @@ export interface TestWorkspace {
   requesterSession: string;
   openQueueId: string;
   restrictedQueueId: string;
+  ticketTypeId: string;
+  priorityId: string;
 }
 
 export interface TestFixtures {
@@ -36,8 +38,11 @@ export interface TestFixtures {
   baseUrl: string;
 }
 
-const DATABASE_URL =
-  process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL ?? 'postgresql://ticketos:ticketos@localhost:15432/ticketos';
+const DATABASE_URL = process.env.E2E_DATABASE_URL;
+
+if (!DATABASE_URL || !DATABASE_URL.includes('ticketos_e2e')) {
+  throw new Error('E2E_DATABASE_URL must point to the dedicated ticketos_e2e database');
+}
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3020';
 
@@ -152,7 +157,7 @@ async function createQueue(
   pool: Pool,
   workspaceId: string,
   name: string,
-  accessMode: 'open' | 'restricted',
+  accessMode: 'workspace-agents' | 'restricted',
 ): Promise<string> {
   const { rows } = await pool.query(
     'INSERT INTO queues (id, workspace_id, name, access_mode) VALUES ($1, $2, $3, $4) RETURNING id',
@@ -207,7 +212,7 @@ async function buildWorkspace(
     pool,
     workspaceId,
     `Inbox ${label}`,
-    'open',
+    'workspace-agents',
   );
   const restrictedQueueId = await createQueue(
     pool,
@@ -216,6 +221,20 @@ async function buildWorkspace(
     'restricted',
   );
   await addQueueMember(pool, workspaceId, restrictedQueueId, agentUserId);
+
+  const { rows: ticketTypeRows } = await pool.query(
+    `INSERT INTO ticket_types (workspace_id, name, category, is_default, is_active, sort_order)
+     VALUES ($1, 'Incident', 'incident', true, true, 1) RETURNING id`,
+    [workspaceId],
+  );
+  const ticketTypeId = ticketTypeRows[0].id;
+
+  const { rows: priorityRows } = await pool.query(
+    `INSERT INTO priorities (workspace_id, name, sort_order, is_default, is_active)
+     VALUES ($1, 'normal', 2, true, true) RETURNING id`,
+    [workspaceId],
+  );
+  const priorityId = priorityRows[0].id;
 
   const adminSession = await createSession(pool, adminUserId, workspaceId);
   const agentSession = await createSession(pool, agentUserId, workspaceId);
@@ -239,6 +258,8 @@ async function buildWorkspace(
     requesterSession,
     openQueueId,
     restrictedQueueId,
+    ticketTypeId,
+    priorityId,
   };
 }
 
@@ -257,7 +278,11 @@ const CLEANABLE_TABLES = [
   'ticket_followers',
   'ticket_tag_assignments',
   'ticket_tags',
+  'ticket_types',
   'tickets',
+  'status_categories',
+  'statuses',
+  'transitions',
   'queue_members',
   'queues',
   'workspace_memberships',
@@ -266,6 +291,7 @@ const CLEANABLE_TABLES = [
   'magic_links',
   'oidc_accounts',
   'audit_events',
+  'priorities',
   'users',
   'workspaces',
   'outbox_events',
