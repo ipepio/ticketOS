@@ -201,3 +201,24 @@ seeded rows are exactly that shape. The app unit suite still passes 205/205.
 T15 (open, follow-up): there is no regression test for `POST /api/setup/bootstrap`, which is why the
 whole first-run path stayed broken through the previous gate. A fresh-install test must assert that
 bootstrap succeeds and that the seeded configuration obeys the ordering and single-default rules.
+
+L13 (owner-reported defect, root cause): "los tickets no se están creando".
+Reproduced through the real portal with Playwright against a running server: `POST /api/tickets` returned 200
+and the row existed in `tickets`, so creation itself worked. The actual defect was invisible routing: every
+Ticket was inserted with `queue_id = NULL`, so the Queue screen kept reporting `TOTAL IN QUEUE: 0` and each
+new Ticket was absent from every Queue view. `migrations/026` added the column but nothing populated it.
+Fix: `CreateTicketInput` accepts an optional `queueId`; `createTicket` validates an explicit Queue against
+the Workspace and otherwise resolves the Workspace's first Queue, then persists `queue_id` inside the same
+INSERT (ADR 0010). Verified: a Ticket created through the API now lands in `Inbox`, and the data shows new
+rows carrying a queue while the three pre-fix rows stay unrouted.
+
+T16 (open, follow-up): rows created before this fix keep `queue_id = NULL`. A backfill (or a Queue view that
+lists unrouted Tickets explicitly) is still required so historical Tickets are not silently invisible. The
+correct behaviour — hide them or show them under an "Unrouted" section — is a product decision, not an
+implementation detail.
+
+L14 (delivery): the work landed as nine commits on the branch `feat/admin-configuration-and-queues`
+(migration, domain, app policy, app routes, portal, e2e, docs, chores, app fixtures). The work unit
+exceeded the ~400 authored-changed-line guideline: the feature is one indivisible delivery (schema plus
+policy plus routes plus portal plus tests), so the slice boundary is the feature, not a file count. It is
+recorded here rather than split into artificial commits that would not build or pass on their own.
