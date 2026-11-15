@@ -2,20 +2,45 @@
 
 Open Source, self-hosted, multi-Workspace ticketing platform.
 
-> **Status:** designed; implementation has not started.
+## For agents
 
-## Start here
+- [Agent working contract](AGENTS.md) — required starting point.
+- [Navigation & context index](CONTENTS.md) — project structure and file map.
 
-- [Architecture](docs/architecture.md)
-- [Product specification](docs/specs/000-ticketos-product-spec.md)
-- [Engineering backlog](docs/backlog/README.md)
-- [P0 operational-core work items](docs/backlog/p0-operational-core.md)
-- [P1–P3 work items](docs/backlog/p1-p3.md)
-- [Roadmap](docs/roadmap.md)
-- [Domain glossary](docs/glossary.md)
-- [Architecture Decision Records](docs/adr/)
+## For humans
 
-The first implementation work item is `P0-01`.
+[Architecture](docs/architecture.md) · [Product spec](docs/specs/000-ticketos-product-spec.md) · [Backlog](docs/backlog/README.md) · [P0](docs/backlog/p0-operational-core.md) · [P1–P3](docs/backlog/p1-p3.md) · [Roadmap](docs/roadmap.md) · [Glossary](docs/glossary.md) · [ADR index](docs/adr/)
+
+## Status
+
+Implemented as a TypeScript modular monolith in this pnpm workspace. The operational core
+(backlog P0–P3) is implemented. Browser-journey completion work is still in progress —
+this is not production-ready.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `packages/app` | Fastify HTTP adapters, feature modules, SQL adapters, outbox |
+| `packages/domain` | Framework-free domain contracts |
+| `packages/portal` | React 19 portal |
+| `packages/shared` | Cross-package value types |
+| `packages/worker` | Outbox worker |
+| `packages/tests` | Playwright end-to-end suite |
+| `migrations/` | Append-only SQL migrations |
+
+## Development
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm install` | Install dependencies |
+| `pnpm docker:up` | Start PostgreSQL and dependencies |
+| `pnpm db:migrate` | Run pending migrations |
+| `pnpm dev:app` | Fastify API in dev mode |
+| `pnpm dev:portal` | React portal in dev mode |
+| `pnpm -r typecheck` | TypeScript check across packages |
+| `pnpm -r test` | Run vitest unit tests across packages |
+| `pnpm test:e2e` | Run Playwright end-to-end tests |
 
 ## Architecture guardrails
 
