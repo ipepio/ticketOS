@@ -45,12 +45,14 @@
     "@ticketos/shared": "workspace:*",
     "fastify": "^5.2.0",
     "kysely": "^0.27.0",
+    "nodemailer": "^9.0.3",
     "pg": "^8.13.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@fastify/swagger": "^9.0.0",
     "@fastify/swagger-ui": "^5.0.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.11.0",
     "eslint": "^9.0.0",
     "kysely-codegen": "^0.17.0",
