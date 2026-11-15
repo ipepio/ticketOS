@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { createRoot } from 'react-dom/client';
 import { t as translate, resolveInitialLocale, SUPPORTED_LOCALES, type Locale } from './i18n';
+import { MembersPage, OrganizationsPage, StatusConfigurationPage, QueuesPage } from './AdminPages';
 import './ticketos.css';
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,25 @@ interface TimelineEntry {
   authorId: string | null;
   visibility: string;
   createdAt: string;
+}
+
+interface ConfigurationItem {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  sortOrder: number;
+  isDefault: boolean;
+}
+
+interface SelectableConfiguration {
+  statuses: ConfigurationItem[];
+  priorities: ConfigurationItem[];
+  ticketTypes: ConfigurationItem[];
+}
+
+interface ApiError extends Error {
+  code?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,8 +120,10 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`API ${res.status}: ${body || res.statusText}`);
+    const body = await res.json().catch(() => null) as { error?: string; code?: string } | null;
+    const error = new Error(body?.error || res.statusText);
+    (error as ApiError).code = body?.code;
+    throw error;
   }
   return res.json();
 }
@@ -579,13 +601,21 @@ function Sidebar({
         {workspace?.role === 'workspace-admin' && (
           <>
             <div className="sidebar-section-label" style={{ marginTop: 'var(--sp-3)' }}>{t('portal.admin')}</div>
-            <button className="nav-item" onClick={() => onNavigate('admin-queues')}>
+            <button className={`nav-item${currentPage === 'admin-organizations' ? ' active' : ''}`} onClick={() => onNavigate('admin-organizations')}>
+              <IconUsers />
+              <span>{t('portal.organizations')}</span>
+            </button>
+            <button className={`nav-item${currentPage === 'admin-queues' ? ' active' : ''}`} onClick={() => onNavigate('admin-queues')}>
               <IconInbox />
               <span>{t('portal.queues')}</span>
             </button>
-            <button className="nav-item" onClick={() => onNavigate('admin-members')}>
+            <button className={`nav-item${currentPage === 'admin-members' ? ' active' : ''}`} onClick={() => onNavigate('admin-members')}>
               <IconUsers />
               <span>{t('portal.members')}</span>
+            </button>
+            <button className={`nav-item${currentPage === 'admin-statuses' ? ' active' : ''}`} onClick={() => onNavigate('admin-statuses')}>
+              <IconGear />
+              <span>{t('portal.settings')}</span>
             </button>
           </>
         )}
@@ -1070,19 +1100,178 @@ function TicketDetail({
 }
 
 // ---------------------------------------------------------------------------
-// Create Ticket
+// ---------------------------------------------------------------------------
+// Select (shared helpers for config-driven selects)
+// ---------------------------------------------------------------------------
+
+function configSelect({
+  value,
+  options,
+  onChange,
+  label,
+  required,
+  placeholder,
+  id,
+}: {
+  value: string;
+  options: ConfigurationItem[];
+  onChange: (v: string) => void;
+  label: string;
+  required?: boolean;
+  placeholder?: string;
+  id: string;
+}) {
+  return (
+    <div className="field">
+      <label className="label" htmlFor={id}>
+        {label} {required && <span className="required" aria-hidden="true">*</span>}
+      </label>
+      <select
+        className="input"
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        aria-required={required}
+      >
+        {placeholder && <option value="">{placeholder}</option>}
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create Ticket — driven by workspace configuration
 // ---------------------------------------------------------------------------
 
 function CreateTicket({
   onSubmit,
   onBack,
 }: {
-  onSubmit: (title: string, description: string) => void;
+  onSubmit: (
+    title: string,
+    description: string,
+    ticketTypeId: string,
+    priorityId: string,
+  ) => Promise<void>;
   onBack: () => void;
 }) {
   const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [ticketTypeId, setTicketTypeId] = useState('');
+  const [priorityId, setPriorityId] = useState('');
+  const [configuration, setConfiguration] = useState<SelectableConfiguration | null>(null);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Load configuration when the component mounts
+  useEffect(() => {
+    let cancelled = false;
+    setConfigLoading(true);
+    setConfigError(null);
+    api<SelectableConfiguration>('/api/tickets/selectable-configuration')
+      .then((data) => {
+        if (cancelled) return;
+        setConfiguration(data);
+        // Pre-select workspace defaults on open
+        setTicketTypeId(data.ticketTypes.find((t) => t.isDefault)?.id ?? '');
+        setPriorityId(data.priorities.find((p) => p.isDefault)?.id ?? '');
+        setConfigLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConfigError(t('portal.create_ticket_config_error'));
+        setConfigLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [t]);
+
+
+
+  const needsTicketType =
+    !!configuration &&
+    configuration.ticketTypes.every((t) => !t.isDefault);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      await onSubmit(title, description, ticketTypeId, priorityId);
+    } catch (err: unknown) {
+      setSubmitting(false);
+      if (err instanceof Error) {
+        const apiErr = err as ApiError;
+        // Map server code to localized copy (S10 — never show raw messages)
+        if (apiErr.code) {
+          const codeKey = `portal.create_ticket_error_${apiErr.code}`;
+          setSubmitError(t(codeKey) !== codeKey ? t(codeKey) : t('portal.create_ticket_error_server'));
+        } else {
+          setSubmitError(t('portal.create_ticket_error_server'));
+        }
+      }
+    }
+  };
+
+  // Show loading state while configuration is in flight
+  if (configLoading) {
+    return (
+      <div className="content" data-testid="create-ticket">
+        <div className="breadcrumb mb-4">
+          <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>
+            {t('portal.back')}
+          </button>
+          <span>/</span>
+          <span className="current">{t('portal.new_ticket')}</span>
+        </div>
+        <div className="card" style={{ maxWidth: 600 }}>
+          <div className="card-header">
+            <span className="card-title">{t('portal.new_ticket_title')}</span>
+          </div>
+          <div className="card-body">
+            <p className="text-muted">{t('portal.create_ticket_loading')}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show inline error with retry when configuration load fails
+  if (configError) {
+    return (
+      <div className="content" data-testid="create-ticket">
+        <div className="breadcrumb mb-4">
+          <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}>
+            {t('portal.back')}
+          </button>
+          <span>/</span>
+          <span className="current">{t('portal.new_ticket')}</span>
+        </div>
+        <div className="card" style={{ maxWidth: 600 }}>
+          <div className="card-header">
+            <span className="card-title">{t('portal.new_ticket_title')}</span>
+          </div>
+          <div className="card-body">
+            <p className="text-small" style={{ color: 'var(--danger)' }} role="alert">{configError}</p>
+            <button className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>
+              {t('portal.create_ticket_retry')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const types = configuration?.ticketTypes ?? [];
+  const priorities = configuration?.priorities ?? [];
 
   return (
     <div className="content" data-testid="create-ticket">
@@ -1099,12 +1288,13 @@ function CreateTicket({
           <span className="card-title">{t('portal.new_ticket_title')}</span>
         </div>
         <div className="card-body">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onSubmit(title, description);
-            }}
-          >
+          <form onSubmit={handleSubmit}>
+            {submitError && (
+              <p className="text-small mb-4" style={{ color: 'var(--danger)' }} role="alert">
+                {submitError}
+              </p>
+            )}
+
             <div className="field">
               <label className="label" htmlFor="ticket-title">
                 {t('portal.title_label')} <span className="required" aria-hidden="true">*</span>
@@ -1131,11 +1321,31 @@ function CreateTicket({
               />
             </div>
 
+            {configSelect({
+              value: ticketTypeId,
+              options: types,
+              onChange: setTicketTypeId,
+              label: t('portal.ticket_type_label'),
+              required: needsTicketType,
+              placeholder: t('portal.ticket_type_placeholder'),
+              id: 'ticket-type',
+            })}
+
+            {configSelect({
+              value: priorityId,
+              options: priorities,
+              onChange: setPriorityId,
+              label: t('portal.priority_label'),
+              required: false,
+              placeholder: t('portal.priority_placeholder'),
+              id: 'ticket-priority',
+            })}
+
             <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
               <button type="button" className="btn btn-secondary" onClick={onBack}>
                 {t('portal.cancel')}
               </button>
-              <button type="submit" className="btn btn-primary" data-testid="submit-ticket-btn">
+              <button type="submit" className="btn btn-primary" data-testid="submit-ticket-btn" disabled={submitting}>
                 <IconPlus size={16} />
                 {t('portal.create')}
               </button>
@@ -1209,7 +1419,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
     setError('');
     setLoading(true);
     try {
-      const result = await api<{ workspaceId: string; sessionId: string }>('/api/setup/bootstrap', {
+      await api<{ workspaceId: string }>('/api/setup/bootstrap', {
         method: 'POST',
         body: JSON.stringify({
           workspaceName,
@@ -1219,8 +1429,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           timezone: timezone || 'UTC',
         }),
       });
-      // Set the session cookie and reload
-      document.cookie = `sessionId=${result.sessionId}; path=/; max-age=86400; samesite=lax`;
+      // The Setup HTTP adapter sets the HttpOnly session cookie.
       window.location.href = window.location.pathname;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t('portal.setup_failed'));
@@ -1315,10 +1524,12 @@ type Page =
   | 'queue'
   | 'my-tickets'
   | 'admin-queues'
-  | 'admin-members';
+  | 'admin-members'
+  | 'admin-organizations'
+  | 'admin-statuses';
 
 function AppContent() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [page, setPage] = useState<Page>('loading');
   const [user, setUser] = useState<User | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -1332,7 +1543,14 @@ function AppContent() {
   // -------------------------------------------------------------------------
   // Session hydration — runs once on mount
   // -------------------------------------------------------------------------
+  const hydrationStarted = useRef(false);
   useEffect(() => {
+    // React StrictMode replays effects in development. A magic link is
+    // single-use, so exchanging it twice would turn a successful login into
+    // an "expired token" error on the replay.
+    if (hydrationStarted.current) return;
+    hydrationStarted.current = true;
+
     // Step 1: check for magic-link token in URL
     const tokenParam = new URLSearchParams(window.location.search).get('token');
 
@@ -1484,18 +1702,6 @@ function AppContent() {
     }
   }, [loadTickets]);
 
-  const handleCreateTicket = useCallback(async (title: string, description: string) => {
-    try {
-      await api('/api/tickets', {
-        method: 'POST',
-        body: JSON.stringify({ title, description }),
-      });
-      setPage(workspace?.role === 'agent' || workspace?.role === 'workspace-admin' ? 'queue' : 'ticket-list');
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create ticket');
-    }
-  }, [workspace]);
-
   const handleLogout = useCallback(async () => {
     try {
       await api('/api/auth/logout', { method: 'POST' });
@@ -1607,10 +1813,21 @@ function AppContent() {
 
         {page === 'create-ticket' && (
           <CreateTicket
-            onSubmit={handleCreateTicket}
+            onSubmit={async (title, description, ticketTypeId, priorityId) => {
+              await api('/api/tickets', {
+                method: 'POST',
+                body: JSON.stringify({ title, description, ticketTypeId, priorityId }),
+              });
+              setPage(workspace?.role === 'agent' || workspace?.role === 'workspace-admin' ? 'queue' : 'ticket-list');
+            }}
             onBack={() => setPage(isAgent ? 'queue' : 'ticket-list')}
           />
         )}
+
+        {page === 'admin-organizations' && <OrganizationsPage locale={locale} />}
+        {page === 'admin-queues' && <QueuesPage locale={locale} />}
+        {page === 'admin-members' && <MembersPage locale={locale} />}
+        {page === 'admin-statuses' && <StatusConfigurationPage locale={locale} />}
       </div>
 
       {/* Bottom nav (mobile) */}

@@ -552,9 +552,67 @@ img, svg { display: block; max-width: 100%; }
 }
 @media (min-width: 769px) { .mobile-only { display: none !important; } }
 
-/* ---------- 20. Print ---------- */
+/* ---------- 20. Workspace administration ---------- */
+.admin-alert {
+  padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
+  color: var(--danger); background: var(--danger-light);
+  border: 1px solid color-mix(in oklch, var(--danger), transparent 65%);
+  border-radius: var(--r-md); font-size: 13px;
+}
+
+/* ---------- 20b. Queue management ---------- */
+.queue-card {
+  width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4); background: var(--surface);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  margin-bottom: var(--sp-2);
+}
+.queue-card:hover { border-color: var(--accent); }
+.queue-card.active { border: 2px solid var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+.queue-layout { gap: var(--sp-5); }
+.queue-member-panel { width: 320px; flex-shrink: 0; }
+.queue-member-body { max-height: 400px; overflow-y: auto; }
+@media (max-width: 480px) {
+  .queue-layout { flex-direction: column; gap: var(--sp-4); }
+  .queue-member-panel { width: 100%; }
+  .queue-card { padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-1); }
+  .queue-card .hide-mobile { display: none !important; }
+}
+.admin-skeleton { height: 240px; width: 100%; }
+.admin-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+.org-icon {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border-radius: var(--r-sm); background: var(--accent-light);
+  color: var(--accent); font-weight: 700;
+}
+.table-select { min-width: 130px; padding-block: var(--sp-1); }
+.badge-button { border: 0; cursor: pointer; }
+.status-dot-lg { width: 16px; height: 16px; }
+.color-input { min-height: 36px; padding: 3px; }
+
+/* Admin config — responsive action row */
+.action-row { white-space: normal; }
+.action-row .btn, .action-row .toggle { flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  .admin-form-grid { grid-template-columns: 1fr; gap: 0; }
+  .split-side { width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .queue-card .flex { flex-wrap: wrap; }
+}
+
+/* ---------- 21. Print ---------- */
 @media print {
   .sidebar, .topbar, .bottom-nav, .reply-box, .modal-overlay { display: none !important; }
   .main { margin-left: 0; }
   body { background: #fff; }
+}
+
+.form-error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--danger);
 }
