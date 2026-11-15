@@ -266,8 +266,7 @@ describe('Identity + Workspace integration', () => {
   describe('Queue access control', () => {
     it('creates a restricted queue', async () => {
       const ws = await workspace.createWorkspace({ name: 'Queue WS' });
-      const queue = await workspace.createQueue({
-        workspaceId: ws.id,
+      const queue = await workspace.createQueue(ws.id, crypto.randomUUID(), {
         name: 'Security Team',
         accessMode: 'restricted',
       });
@@ -278,24 +277,24 @@ describe('Identity + Workspace integration', () => {
 
     it('manages queue members for a restricted queue', async () => {
       const ws = await workspace.createWorkspace({ name: 'Member WS' });
-      const queue = await workspace.createQueue({
-        workspaceId: ws.id,
+      const queue = await workspace.createQueue(ws.id, crypto.randomUUID(), {
         name: 'Team',
         accessMode: 'restricted',
       });
 
-      // Create user first (FK requires it)
+      // Create user first (FK requires it), then give an active Agent membership
       const { rows: userRows } = await pool!.query(
         'INSERT INTO users (id, email) VALUES ($1, $2) RETURNING id',
         [crypto.randomUUID(), 'member@example.com'],
       );
       const testUserId = userRows[0]!.id;
 
-      await workspace.addQueueMember({
-        workspaceId: ws.id,
-        queueId: queue.id,
-        userId: testUserId,
-      });
+      await pool!.query(
+        'INSERT INTO workspace_memberships (user_id, workspace_id, role) VALUES ($1, $2, $3)',
+        [testUserId, ws.id, 'agent'],
+      );
+
+      await workspace.addQueueMember(ws.id, testUserId, queue.id, testUserId);
 
       const isMember = await workspace.isQueueMember(queue.id, testUserId);
       expect(isMember).toBe(true);
@@ -306,26 +305,26 @@ describe('Identity + Workspace integration', () => {
 
     it('removes a queue member', async () => {
       const ws = await workspace.createWorkspace({ name: 'Remove WS' });
-      const queue = await workspace.createQueue({
-        workspaceId: ws.id,
+      const queue = await workspace.createQueue(ws.id, crypto.randomUUID(), {
         name: 'Team',
         accessMode: 'restricted',
       });
 
-      // Create user first (FK requires it)
+      // Create user first (FK requires it), then give an active Agent membership
       const { rows: userRows } = await pool!.query(
         'INSERT INTO users (id, email) VALUES ($1, $2) RETURNING id',
         [crypto.randomUUID(), 'remover@example.com'],
       );
       const testUserId = userRows[0]!.id;
 
-      await workspace.addQueueMember({
-        workspaceId: ws.id,
-        queueId: queue.id,
-        userId: testUserId,
-      });
+      await pool!.query(
+        'INSERT INTO workspace_memberships (user_id, workspace_id, role) VALUES ($1, $2, $3)',
+        [testUserId, ws.id, 'agent'],
+      );
 
-      await workspace.removeQueueMember(ws.id, queue.id, testUserId);
+      await workspace.addQueueMember(ws.id, testUserId, queue.id, testUserId);
+
+      await workspace.removeQueueMember(ws.id, testUserId, queue.id, testUserId);
 
       const isMember = await workspace.isQueueMember(queue.id, testUserId);
       expect(isMember).toBe(false);

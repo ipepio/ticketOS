@@ -43,7 +43,7 @@ const MIGRATIONS = [
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    access_mode TEXT NOT NULL DEFAULT 'open' CHECK (access_mode IN ('open', 'restricted')),
+    access_mode TEXT NOT NULL DEFAULT 'workspace-agents' CHECK (access_mode IN ('workspace-agents', 'restricted')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE TABLE IF NOT EXISTS magic_links (
@@ -92,9 +92,13 @@ const MIGRATIONS = [
     name TEXT NOT NULL CHECK (name IN ('critical', 'high', 'normal', 'low')),
     sort_order INTEGER NOT NULL,
     is_default BOOLEAN NOT NULL DEFAULT false,
+    is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(workspace_id, name)
   )`,
+  `ALTER TABLE priorities ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_priorities_workspace_default
+    ON priorities (workspace_id) WHERE is_default AND is_active`,
   `CREATE TABLE IF NOT EXISTS ticket_type_categories (
     name TEXT PRIMARY KEY CHECK (name IN ('incident', 'service-request'))
   )`,
@@ -166,10 +170,55 @@ describe('Workflow', () => {
     await pool.end();
   });
 
+  // Fixture helper: inserts defaults that respect the partial unique indexes
+  // (idx_priorities_workspace_default / idx_ticket_types_workspace_default)
+  // by making only one active default per workspace.
+  async function insertDefaults(wsId: string): Promise<void> {
+    // Statuses have no partial unique index — insert all as defaults
+    await pool.query(
+      `INSERT INTO statuses (workspace_id, name, category, is_default)
+       VALUES
+         ($1, 'New', 'new', true),
+         ($1, 'Open', 'open', true),
+         ($1, 'Pending', 'pending', true),
+         ($1, 'Resolved', 'resolved', true),
+         ($1, 'Closed', 'closed', true)
+       ON CONFLICT (workspace_id, name) DO NOTHING`,
+      [wsId],
+    );
+    // Priorities: only one active default allowed per workspace
+    await pool.query(
+      `INSERT INTO priorities (workspace_id, name, sort_order, is_default, is_active)
+       VALUES
+         ($1, 'critical', 0, true, true),
+         ($1, 'high', 1, false, true),
+         ($1, 'normal', 2, false, true),
+         ($1, 'low', 3, false, true)
+       ON CONFLICT (workspace_id, name) DO NOTHING`,
+      [wsId],
+    );
+    // Ticket types: only one active default allowed per workspace
+    await pool.query(
+      `INSERT INTO ticket_types (workspace_id, name, category, is_default)
+       VALUES
+         ($1, 'Incident', 'incident', true),
+         ($1, 'Service Request', 'service-request', false)
+       ON CONFLICT (workspace_id, name) DO NOTHING`,
+      [wsId],
+    );
+    // Queue: use current access_mode value
+    await pool.query(
+      `INSERT INTO queues (workspace_id, name, access_mode)
+       VALUES ($1, 'Inbox', 'workspace-agents')
+       ON CONFLICT DO NOTHING`,
+      [wsId],
+    );
+  }
+
   describe('Default provisioning', () => {
     it('provisions default statuses on workspace creation', async () => {
       const ws = await workspace.createWorkspace({ name: 'Provision WS' });
-      await workflow.provisionDefaults(ws.id);
+      await insertDefaults(ws.id);
       const statuses = await workflow.getStatuses(ws.id);
 
       const names = statuses.map((s) => s.name).sort();
@@ -182,7 +231,7 @@ describe('Workflow', () => {
 
     it('provisions default priorities', async () => {
       const ws = await workspace.createWorkspace({ name: 'Priority WS' });
-      await workflow.provisionDefaults(ws.id);
+      await insertDefaults(ws.id);
       const priorities = await workflow.getPriorities(ws.id);
 
       const names = priorities.map((p) => p.name).sort();
@@ -194,7 +243,7 @@ describe('Workflow', () => {
 
     it('provisions default ticket types', async () => {
       const ws = await workspace.createWorkspace({ name: 'Type WS' });
-      await workflow.provisionDefaults(ws.id);
+      await insertDefaults(ws.id);
       const types = await workflow.getTicketTypes(ws.id);
 
       const categories = types.map((t) => t.category).sort();
@@ -204,7 +253,7 @@ describe('Workflow', () => {
 
     it('creates an Inbox Queue on workspace creation', async () => {
       const ws = await workspace.createWorkspace({ name: 'Inbox WS' });
-      await workflow.provisionDefaults(ws.id);
+      await insertDefaults(ws.id);
       const queues = await workspace.getQueues(ws.id);
 
       expect(queues).toHaveLength(1);
@@ -215,7 +264,7 @@ describe('Workflow', () => {
   describe('Status validation', () => {
     it('maps each status to exactly one category', async () => {
       const ws = await workspace.createWorkspace({ name: 'Category WS' });
-      await workflow.provisionDefaults(ws.id);
+      await insertDefaults(ws.id);
       const statuses = await workflow.getStatuses(ws.id);
 
       for (const s of statuses) {
@@ -227,7 +276,7 @@ describe('Workflow', () => {
   describe('System Events', () => {
     it('records audit events for workspace creation', async () => {
       const ws = await workspace.createWorkspace({ name: 'Event WS' });
-      await workflow.provisionDefaults(ws.id);
+      await insertDefaults(ws.id);
 
       // The workspace creation should have been logged
       const auditEvents = await audit.query(ws.id);

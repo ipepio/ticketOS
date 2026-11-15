@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { Kysely, PostgresDialect } from 'kysely';
-import type { Config } from '../config';
+import type { Config } from '../config.js';
 
 let pool: Pool | null = null;
 let db: Kysely<any> | null = null;

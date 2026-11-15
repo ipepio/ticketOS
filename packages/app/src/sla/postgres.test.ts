@@ -33,7 +33,7 @@ const MIGRATIONS = [
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    access_mode TEXT NOT NULL DEFAULT 'open' CHECK (access_mode IN ('open', 'restricted')),
+    access_mode TEXT NOT NULL DEFAULT 'workspace-agents' CHECK (access_mode IN ('workspace-agents', 'restricted')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE TABLE IF NOT EXISTS queue_members (
@@ -180,7 +180,7 @@ describe('SLA Module', () => {
     // Create queue
     const { rows: qRows } = await pool.query(
       'INSERT INTO queues (workspace_id, name, access_mode) VALUES ($1, $2, $3) RETURNING id',
-      [workspaceId, 'Support Queue', 'open'],
+      [workspaceId, 'Support Queue', 'workspace-agents'],
     );
     queueId = qRows[0]!.id;
 

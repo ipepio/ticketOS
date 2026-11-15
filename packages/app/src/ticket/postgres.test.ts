@@ -68,6 +68,30 @@ const MIGRATIONS = [
   `ALTER TABLE timeline_entries ADD COLUMN IF NOT EXISTS redacted_at TIMESTAMPTZ`,
   `ALTER TABLE timeline_entries ADD COLUMN IF NOT EXISTS redacted_by UUID REFERENCES users(id) ON DELETE SET NULL`,
   `ALTER TABLE timeline_entries ADD COLUMN IF NOT EXISTS redact_reason TEXT`,
+  `ALTER TABLE tickets ADD COLUMN IF NOT EXISTS priority_id UUID`,
+  `ALTER TABLE ticket_types ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE priorities ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
+  // Ticket Type configuration referenced by every created Ticket
+  `CREATE TABLE IF NOT EXISTS ticket_type_categories (name TEXT PRIMARY KEY)`,
+  `INSERT INTO ticket_type_categories (name) VALUES ('incident'), ('service-request') ON CONFLICT DO NOTHING`,
+  `CREATE TABLE IF NOT EXISTS ticket_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(workspace_id, name)
+  )`,
+  `CREATE TABLE IF NOT EXISTS priorities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (name IN ('critical', 'high', 'normal', 'low')),
+    sort_order INTEGER NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(workspace_id, name)
+  )`,
 ];
 
 let pool: Pool | null = null;
@@ -76,6 +100,8 @@ describe('Ticket and Timeline', () => {
   let ticket: PostgresTicket;
   let userId: string;
   let wsId: string;
+  let ticketTypeId: string;
+  let priorityId: string;
 
   beforeAll(async () => {
     pool = new Pool({
@@ -92,6 +118,8 @@ describe('Ticket and Timeline', () => {
     await pool!.query('DELETE FROM ticket_followers');
     await pool!.query('DELETE FROM ticket_tags');
     await pool!.query('DELETE FROM tickets');
+    await pool!.query('DELETE FROM ticket_types');
+    await pool!.query('DELETE FROM priorities');
     await pool!.query('DELETE FROM workspace_memberships');
     await pool!.query('DELETE FROM queues');
     await pool!.query('DELETE FROM queue_members');
@@ -112,6 +140,20 @@ describe('Ticket and Timeline', () => {
     );
     wsId = wsRows[0]!.id;
 
+    const { rows: ticketTypeRows } = await pool!.query(
+      `INSERT INTO ticket_types (workspace_id, name, category, is_default)
+       VALUES ($1, 'Incident', 'incident', true) RETURNING id`,
+      [wsId],
+    );
+    ticketTypeId = ticketTypeRows[0]!.id;
+
+    const { rows: priorityRows } = await pool!.query(
+      `INSERT INTO priorities (workspace_id, name, sort_order, is_default)
+       VALUES ($1, 'normal', 2, true) RETURNING id`,
+      [wsId],
+    );
+    priorityId = priorityRows[0]!.id;
+
     ticket = new PostgresTicket(pool!);
   });
 
@@ -129,6 +171,8 @@ describe('Ticket and Timeline', () => {
         workspaceId: wsId as any,
         title: 'Test ticket',
         createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
       };
       const t = await ticket.createTicket(input);
       expect(t.title).toBe('Test ticket');
@@ -148,6 +192,8 @@ describe('Ticket and Timeline', () => {
         assignedTo: userId as any,
         visibility: 'internal',
         createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
       };
       const t = await ticket.createTicket(input);
       expect(t.priority).toBe('urgent');
@@ -163,14 +209,16 @@ describe('Ticket and Timeline', () => {
         workspaceId: wsId as any,
         title: 'Get me',
         createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
       });
-      const found = await ticket.getTicket(t.id);
+      const found = await ticket.getTicket(wsId as any, t.id);
       expect(found).not.toBeNull();
       expect(found!.title).toBe('Get me');
     });
 
     it('returns null for non-existent ticket', async () => {
-      const found = await ticket.getTicket(crypto.randomUUID());
+      const found = await ticket.getTicket(wsId as any, crypto.randomUUID());
       expect(found).toBeNull();
     });
   });
@@ -181,6 +229,8 @@ describe('Ticket and Timeline', () => {
         workspaceId: wsId as any,
         title: 'Old title',
         createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
       });
       const updated = await ticket.updateTicket({
         id: t.id,
@@ -200,33 +250,35 @@ describe('Ticket and Timeline', () => {
         workspaceId: wsId as any,
         title: 'Delete me',
         createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
       });
-      await ticket.deleteTicket(t.id);
-      const found = await ticket.getTicket(t.id);
+      await ticket.deleteTicket(wsId as any, t.id);
+      const found = await ticket.getTicket(wsId as any, t.id);
       expect(found).toBeNull();
     });
   });
 
   describe('listTickets', () => {
     it('lists all tickets in a workspace', async () => {
-      await ticket.createTicket({ workspaceId: wsId as any, title: 'T1', createdBy: userId as any });
-      await ticket.createTicket({ workspaceId: wsId as any, title: 'T2', createdBy: userId as any });
+      await ticket.createTicket({ workspaceId: wsId as any, title: 'T1', createdBy: userId as any, ticketTypeId, priorityId });
+      await ticket.createTicket({ workspaceId: wsId as any, title: 'T2', createdBy: userId as any, ticketTypeId, priorityId });
       const list = await ticket.listTickets(wsId as any);
       expect(list).toHaveLength(2);
     });
 
     it('filters by status', async () => {
-      const t1 = await ticket.createTicket({ workspaceId: wsId as any, title: 'T1', createdBy: userId as any });
+      const t1 = await ticket.createTicket({ workspaceId: wsId as any, title: 'T1', createdBy: userId as any, ticketTypeId, priorityId });
       await ticket.updateTicket({ id: t1.id, status: 'todo' });
-      await ticket.createTicket({ workspaceId: wsId as any, title: 'T2', createdBy: userId as any });
+      await ticket.createTicket({ workspaceId: wsId as any, title: 'T2', createdBy: userId as any, ticketTypeId, priorityId });
       const list = await ticket.listTickets(wsId as any, { status: 'todo' });
       expect(list).toHaveLength(1);
       expect(list[0]!.title).toBe('T1');
     });
 
     it('filters by priority', async () => {
-      await ticket.createTicket({ workspaceId: wsId as any, title: 'T1', priority: 'high', createdBy: userId as any });
-      await ticket.createTicket({ workspaceId: wsId as any, title: 'T2', priority: 'low', createdBy: userId as any });
+      await ticket.createTicket({ workspaceId: wsId as any, title: 'T1', priority: 'high', createdBy: userId as any, ticketTypeId, priorityId });
+      await ticket.createTicket({ workspaceId: wsId as any, title: 'T2', priority: 'low', createdBy: userId as any, ticketTypeId, priorityId });
       const list = await ticket.listTickets(wsId as any, { priority: 'high' });
       expect(list).toHaveLength(1);
     });
@@ -234,7 +286,7 @@ describe('Ticket and Timeline', () => {
 
   describe('Timeline entries', () => {
     it('appends a message to a ticket', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Timeline test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Timeline test', createdBy: userId as any, ticketTypeId, priorityId });
       const entry = await ticket.appendTimelineEntry({
         ticketId: t.id,
         kind: 'message',
@@ -247,7 +299,7 @@ describe('Ticket and Timeline', () => {
     });
 
     it('appends an internal note', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Internal test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Internal test', createdBy: userId as any, ticketTypeId, priorityId });
       const entry = await ticket.appendTimelineEntry({
         ticketId: t.id,
         kind: 'internal_note',
@@ -259,7 +311,7 @@ describe('Ticket and Timeline', () => {
     });
 
     it('appends a system event', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'System test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'System test', createdBy: userId as any, ticketTypeId, priorityId });
       const entry = await ticket.appendTimelineEntry({
         ticketId: t.id,
         kind: 'system_event',
@@ -272,7 +324,7 @@ describe('Ticket and Timeline', () => {
     });
 
     it('gets timeline entries ordered by creation', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Ordered test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Ordered test', createdBy: userId as any, ticketTypeId, priorityId });
       await ticket.appendTimelineEntry({ ticketId: t.id, kind: 'message', content: 'First', authorId: userId as any, visibility: 'public' });
       await ticket.appendTimelineEntry({ ticketId: t.id, kind: 'message', content: 'Second', authorId: userId as any, visibility: 'public' });
 
@@ -283,7 +335,7 @@ describe('Ticket and Timeline', () => {
     });
 
     it('filters timeline by kind', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Filter test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Filter test', createdBy: userId as any, ticketTypeId, priorityId });
       await ticket.appendTimelineEntry({ ticketId: t.id, kind: 'message', content: 'Msg', authorId: userId as any, visibility: 'public' });
       await ticket.appendTimelineEntry({ ticketId: t.id, kind: 'system_event', content: 'Sys', authorId: null, visibility: 'public' });
 
@@ -295,14 +347,14 @@ describe('Ticket and Timeline', () => {
 
   describe('Tags', () => {
     it('adds a tag to a ticket', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Tag test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Tag test', createdBy: userId as any, ticketTypeId, priorityId });
       const tag = await ticket.addTag(t.id, 'bug');
       expect(tag.name).toBe('bug');
       expect(tag.ticketId).toBe(t.id);
     });
 
     it('lists tags for a ticket', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Tag list test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Tag list test', createdBy: userId as any, ticketTypeId, priorityId });
       await ticket.addTag(t.id, 'bug');
       await ticket.addTag(t.id, 'frontend');
       const tags = await ticket.getTags(t.id);
@@ -310,7 +362,7 @@ describe('Ticket and Timeline', () => {
     });
 
     it('removes a tag', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Tag remove test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Tag remove test', createdBy: userId as any, ticketTypeId, priorityId });
       const tag = await ticket.addTag(t.id, 'temp');
       await ticket.removeTag(t.id, tag.id);
       const tags = await ticket.getTags(t.id);
@@ -320,21 +372,21 @@ describe('Ticket and Timeline', () => {
 
   describe('Followers', () => {
     it('adds a follower', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Follower test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Follower test', createdBy: userId as any, ticketTypeId, priorityId });
       const follower = await ticket.addFollower(t.id, userId as any);
       expect(follower.ticketId).toBe(t.id);
       expect(follower.userId).toBe(userId);
     });
 
     it('lists followers', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Followers list', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Followers list', createdBy: userId as any, ticketTypeId, priorityId });
       await ticket.addFollower(t.id, userId as any);
       const followers = await ticket.getFollowers(t.id);
       expect(followers).toHaveLength(1);
     });
 
     it('removes a follower', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Follower remove', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Follower remove', createdBy: userId as any, ticketTypeId, priorityId });
       await ticket.addFollower(t.id, userId as any);
       await ticket.removeFollower(t.id, userId as any);
       const followers = await ticket.getFollowers(t.id);
@@ -344,7 +396,7 @@ describe('Ticket and Timeline', () => {
 
   describe('Redaction', () => {
     it('redacts a timeline entry and saves original content', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Redact test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Redact test', createdBy: userId as any, ticketTypeId, priorityId });
       const entry = await ticket.appendTimelineEntry({
         ticketId: t.id,
         kind: 'message',
@@ -359,7 +411,7 @@ describe('Ticket and Timeline', () => {
     });
 
     it('redacted entries are not returned in normal getTimeline', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Filter test', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Filter test', createdBy: userId as any, ticketTypeId, priorityId });
       const entry1 = await ticket.appendTimelineEntry({
         ticketId: t.id, kind: 'message', content: 'Public msg', authorId: userId as any, visibility: 'public',
       });
@@ -377,21 +429,21 @@ describe('Ticket and Timeline', () => {
 
   describe('Cancellation', () => {
     it('cancels a ticket when requested by the creator', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Cancel me', createdBy: userId as any });
-      const cancelled = await ticket.cancelTicket(t.id, userId as any);
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Cancel me', createdBy: userId as any, ticketTypeId, priorityId });
+      const cancelled = await ticket.cancelTicket(wsId as any, t.id, userId as any);
       expect(cancelled.status).toBe('cancelled');
     });
 
     it('rejects cancellation by non-creator', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Not mine', createdBy: userId as any });
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Not mine', createdBy: userId as any, ticketTypeId, priorityId });
       const otherUserId = crypto.randomUUID();
-      await expect(ticket.cancelTicket(t.id, otherUserId as any)).rejects.toThrow('Only the ticket creator');
+      await expect(ticket.cancelTicket(wsId as any, t.id, otherUserId as any)).rejects.toThrow('Only the ticket creator');
     });
 
     it('rejects double cancellation', async () => {
-      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Already cancelled', createdBy: userId as any });
-      await ticket.cancelTicket(t.id, userId as any);
-      await expect(ticket.cancelTicket(t.id, userId as any)).rejects.toThrow('already cancelled');
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Already cancelled', createdBy: userId as any, ticketTypeId, priorityId });
+      await ticket.cancelTicket(wsId as any, t.id, userId as any);
+      await expect(ticket.cancelTicket(wsId as any, t.id, userId as any)).rejects.toThrow('already cancelled');
     });
   });
 });
