@@ -31,9 +31,9 @@ constraints."
 
 | ID | Spec | Route | Commit |
 | --- | --- | --- | --- |
-| T1 | S1, S6 | worker: additive migration `status_id` + backfill from `status` per Workspace (high risk item 1 — dedicated verifier pass after) | — |
-| T2 | S2, S5 | worker: `createTicket`/`updateTicket`/transitions resolve `status_id` against the Workspace's statuses and validate transitions | — |
-| T3 | S1 | worker: read paths return the configured status; remove the enum writes (`'backlog'` literals in ticket + email intake) | — |
+| T1 | S1, S6 | worker: additive migration `status_id` + backfill from `status` per Workspace (high risk item 1 — dedicated verifier pass after) | 9162846 (verifier PASS) |
+| T2 | S2, S5 | worker: `createTicket`/`updateTicket`/transitions resolve `status_id` against the Workspace's statuses and validate transitions | a98d4ca (validation, not transitions) |
+| T3 | S1 | worker: read paths return the configured status; remove the enum writes (`'backlog'` literals in ticket + email intake) | a98d4ca |
 | T4 | S2, S3 | worker: portal/journeys observe configured statuses; e2e journey slice 10 ("A Workspace Admin can configure a Status and use it in an allowed transition") | — |
 
 ## Log
@@ -47,3 +47,23 @@ writes: `packages/app/src/ticket/postgres.ts` (createTicket 'backlog' literal, u
 `mapTicket` casts, `packages/app/src/routes/tickets.ts` query filter; portal `StatusBadge` statusMap and
 TicketList/AgentQueue filters; `migrations/004_ticket_and_timeline.sql` CHECK constraint on the enum;
 `migrations/003_workflow.sql` already defines `statuses` + `transitions` with status_id references.
+
+L3 (T1 evidence, worker + independent verifier): migration 027 landed as 9162846 — additive column, backfill
+mapped by category with default→sort_order→id determinism, (workspace_id, status_id) index, idempotent.
+Migration-layer tests in `packages/app/src/ticket/status-backfill.test.ts` (scratch `ticketos_status_test`).
+Independent verifier (gentle-ai-verify) PASS on its own scratch database: additive-only pg_dump diff,
+deterministic replay, zero cross-Workspace references, no-overwrite, no destructive operation. App suite
+217/217.
+
+L4 (T2+T3 evidence, worker + parent gates): commit a98d4ca — domain drops the TicketStatus enum
+(Ticket carries statusId/statusName/statusCategory); createTicket/updateTicket/list/cancel converge on
+status_id with Workspace validation; email intake reuses the exported resolver; queue aggregates filter
+by category; REST shape + portal badge/filters updated; e2e consumers updated with the same unit.
+Parent judge note: the worker's app-suite failures on first run were environment state, not code — the
+shared dev database (15432) had not run migration 027; `pnpm db:migrate` on it turned 28 failures into
+226/226. Playwright 27/27 (26 + 1 new release-e2e assertion test for the status response shape), portal
+13/13, typecheck 0, lint 0.
+
+L5 (slice discipline): the goal doc records that feat/status-convergence stacks on
+feat/first-run-onboarding; merge order must be onboarding first, then this branch. T4 (transitions via
+the transitions table + journey slice 10) remains open; it closes the feature.
