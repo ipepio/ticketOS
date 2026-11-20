@@ -8,7 +8,7 @@ the orchestrator acting as judge and reviewer. Deployment/hardening stays out of
 
 | # | Feature | Specification | Branch | Feature doc | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | First-run onboarding | docs/specs/first-run-onboarding.md | feat/first-run-onboarding | odd/tasks/first-run-onboarding.md | in progress |
+| 1 | First-run onboarding | docs/specs/first-run-onboarding.md | feat/first-run-onboarding | odd/tasks/first-run-onboarding.md | done (559fc73) |
 | 2 | Ticket status model convergence (migration, high risk item 1) | docs/specs/operational-portal-completion.md (Known model mismatch; F4) | feat/status-convergence | created when started | pending |
 | 3 | Portal journeys: landing/intake, durable sessions, orgs/memberships, ticket form (F1, F2, F3, F7; slices 17–19) | docs/specs/operational-portal-completion.md | feat/portal-journeys | created when started | pending |
 | 4 | Attachments: S3 adapter, selection policy, dev MinIO (F8, F9; slices 11–16) | docs/specs/operational-portal-completion.md | feat/attachments-storage | created when started | pending |
