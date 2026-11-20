@@ -1400,16 +1400,30 @@ function BottomNav({ currentPage, onNavigate, isAgent }: { currentPage: string; 
 // Setup Wizard (First-run onboarding)
 // ---------------------------------------------------------------------------
 
+// Timezones offered when the browser cannot report one, plus a small set of
+// common values. The browser's own timezone is always added at render time, so a
+// detected zone outside this list still appears selected instead of blank.
+const SETUP_TIMEZONES = [
+  'UTC', 'America/Mexico_City', 'America/New_York', 'America/Los_Angeles',
+  'America/Chicago', 'America/Sao_Paulo', 'Europe/London', 'Europe/Madrid',
+  'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney',
+];
+
+/** Browser timezone with the documented `UTC` fallback. */
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const { t, locale, setLocale } = useI18n();
   const [workspaceName, setWorkspaceName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminName, setAdminName] = useState('');
-  const [timezone, setTimezone] = useState(() => {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone
-    } catch { return 'UTC'; }
-  });
+  const [timezone, setTimezone] = useState(browserTimeZone);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -1438,11 +1452,9 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
     }
   };
 
-  const timezones = [
-    'UTC', 'America/Mexico_City', 'America/New_York', 'America/Los_Angeles',
-    'America/Chicago', 'America/Sao_Paulo', 'Europe/London', 'Europe/Madrid',
-    'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney',
-  ];
+  const timezones = SETUP_TIMEZONES.includes(timezone)
+    ? SETUP_TIMEZONES
+    : [...SETUP_TIMEZONES, timezone];
 
   return (
     <main className="auth-page" data-testid="setup-wizard">

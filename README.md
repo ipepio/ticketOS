@@ -42,6 +42,37 @@ this is not production-ready.
 | `pnpm -r test` | Run vitest unit tests across packages |
 | `pnpm test:e2e` | Run Playwright end-to-end tests |
 
+## First-run setup
+
+A fresh installation has no Workspace yet, so `GET /api/setup/status` reports
+`configured: false` and the portal renders a dedicated setup wizard instead of
+the application shell. While setup is pending there is no Sidebar, topbar,
+bottom navigation, "My Tickets", or "New Ticket": the wizard is a full-page
+state, not a modal over the authenticated portal.
+
+The wizard creates the first Workspace, its Workspace Admin, the default Inbox
+queue, and the default statuses, priorities, and ticket types, then signs that
+admin in with a session cookie.
+
+Defaults come from the browser:
+
+- **Language** — the first supported value in `navigator.languages` (`es`, `en`,
+  `fr`, `de`, `pt`, `it`, `nl`, `ja`, `zh`), with English as the fallback. A
+  previously chosen `ticketos-locale` value always wins over the browser
+  preference, and the wizard's language selector persists the chosen value in
+  `ticketos-locale` and `document.documentElement.lang`.
+- **Timezone** — `Intl.DateTimeFormat().resolvedOptions().timeZone`, or `UTC`
+  when the browser cannot report one. The chosen timezone seeds the default
+  business calendar.
+
+The first required field is focused on load, every field has a label, and a
+failed submission is announced once with `role="alert"` without clearing the
+entered values.
+
+`packages/tests/e2e/first-run-onboarding.spec.ts` covers this state against a
+disposable app instance that it starts itself (fixed `ticketos_setup_e2e`
+database), so the shared e2e installation can stay configured.
+
 ## Architecture guardrails
 
 - Build a modular monolith, not microservices.
