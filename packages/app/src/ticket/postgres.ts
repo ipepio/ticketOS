@@ -13,7 +13,10 @@ import type {
   StatusCategory,
 } from '@ticketos/domain';
 import type { UserId } from '@ticketos/shared';
-import { ConfigurationNotFoundError } from '@ticketos/domain';
+import {
+  ConfigurationNotFoundError,
+  ConfigurationValidationError,
+} from '@ticketos/domain';
 
 /**
  * A Status resolved from the Workspace's own configuration.
@@ -107,6 +110,54 @@ async function resolveRequestedStatus(
     );
   }
   return mapStatusRow(row);
+}
+
+/**
+ * Enforce the Workspace's permitted Status changes (S2, S3).
+ *
+ * The rule, and why it is the rule:
+ *
+ * - A Workspace with **no** `transitions` rows has not configured transitions at
+ *   all. Failing closed there would make every Ticket of a freshly provisioned
+ *   Workspace unchangeable, so an unconfigured Workspace allows any *active*
+ *   Status of that Workspace (fail-open **only** in this exact case). This is
+ *   the rule `PostgresWorkflow.validateTransition` documents ("If no
+ *   transitions are configured, all transitions are allowed"); that legacy
+ *   helper is unused and its body disagrees with its own comment, so the rule
+ *   is restated here rather than delegated to it.
+ * - A Workspace with **at least one** `transitions` row has opted into explicit
+ *   transition modelling, so only the listed (from → to) pairs are allowed
+ *   (fail-closed). Removing every row returns the Workspace to unconfigured.
+ *
+ * The target Status has already been resolved as existing, active and
+ * Workspace-scoped before this check, so an inactive Status is never reachable
+ * through a listed transition either (S3).
+ */
+async function assertStatusTransitionAllowed(
+  pool: Pool,
+  workspaceId: string,
+  fromStatusId: string,
+  toStatusId: string,
+): Promise<void> {
+  // A no-op write (the requested Status is the current one) is not a
+  // transition, and `transitions` never contains a self-transition.
+  if (fromStatusId === toStatusId) return;
+
+  const { rows } = await pool.query<{ configured: number; allowed: boolean }>(
+    `SELECT (SELECT COUNT(*)::int FROM transitions WHERE workspace_id = $1) AS configured,
+            EXISTS (
+              SELECT 1 FROM transitions
+               WHERE workspace_id = $1 AND from_status_id = $2 AND to_status_id = $3
+            ) AS allowed`,
+    [workspaceId, fromStatusId, toStatusId],
+  );
+  const row = rows[0];
+  if (!row || row.configured === 0 || row.allowed) return;
+
+  throw new ConfigurationValidationError(
+    'Status transition not allowed in this Workspace: configure the transition from the current Status to the requested Status first',
+    'transition-invalid',
+  );
 }
 
 export class PostgresTicket implements TicketModule {
@@ -223,21 +274,40 @@ export class PostgresTicket implements TicketModule {
     const sets: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
+    // S2: recorded on the Timeline once the Status change is applied.
+    let statusChange: { from: string; to: string } | null = null;
 
     if (input.title !== undefined) { sets.push(`title = $${idx++}`); values.push(input.title); }
     if (input.description !== undefined) { sets.push(`description = $${idx++}`); values.push(input.description); }
     // S2: a status change goes through the Workspace-configured Status id. The
-    // Status must exist, be active, and belong to the Ticket's own Workspace.
+    // Status must exist, be active, and belong to the Ticket's own Workspace,
+    // and the change must be permitted by the Workspace's `transitions` rows.
     if (input.statusId !== undefined) {
-      const { rows: currentRows } = await this.pool.query<{ workspace_id: string }>(
-        'SELECT workspace_id FROM tickets WHERE id = $1',
+      const { rows: currentRows } = await this.pool.query<{
+        workspace_id: string;
+        status_id: string;
+        status_name: string;
+      }>(
+        `SELECT t.workspace_id, t.status_id, s.name AS status_name
+           FROM tickets t
+           JOIN statuses s ON s.id = t.status_id
+          WHERE t.id = $1`,
         [input.id],
       );
-      const ticketWorkspaceId = currentRows[0]?.workspace_id;
-      if (!ticketWorkspaceId) {
+      const current = currentRows[0];
+      if (!current) {
         throw new Error(`Ticket not found: ${input.id}`);
       }
-      const status = await resolveRequestedStatus(this.pool, ticketWorkspaceId, input.statusId);
+      const status = await resolveRequestedStatus(this.pool, current.workspace_id, input.statusId);
+      await assertStatusTransitionAllowed(
+        this.pool,
+        current.workspace_id,
+        current.status_id,
+        status.id,
+      );
+      if (status.id !== current.status_id) {
+        statusChange = { from: current.status_name, to: status.name };
+      }
       sets.push(`status_id = $${idx++}`);
       values.push(status.id);
     }
@@ -258,6 +328,19 @@ export class PostgresTicket implements TicketModule {
     if (!updated) {
       throw new Error(`Ticket not found: ${input.id}`);
     }
+
+    // S2: an applied Status change is an immutable Timeline entry, mirroring
+    // the `system_event` entries other Ticket mutations append.
+    if (statusChange) {
+      await this.appendTimelineEntry({
+        ticketId: updated.id,
+        kind: 'status_change',
+        content: `Status changed from ${statusChange.from} to ${statusChange.to}`,
+        authorId: null,
+        visibility: 'public',
+      });
+    }
+
     return updated;
   }
 

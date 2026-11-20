@@ -107,6 +107,16 @@ const MIGRATIONS = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(workspace_id, name)
   )`,
+  // Permitted Status changes (migration 003). Mirrors the production table so
+  // the transition rule (S2) is exercised against the real shape.
+  `CREATE TABLE IF NOT EXISTS transitions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    from_status_id UUID NOT NULL REFERENCES statuses(id) ON DELETE CASCADE,
+    to_status_id UUID NOT NULL REFERENCES statuses(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(workspace_id, from_status_id, to_status_id)
+  )`,
 ];
 
 let pool: Pool | null = null;
@@ -120,6 +130,7 @@ describe('Ticket and Timeline', () => {
   let newStatusId: string;
   let openStatusId: string;
   let closedStatusId: string;
+  let resolvedStatusId: string;
 
   beforeAll(async () => {
     pool = new Pool({
@@ -136,6 +147,7 @@ describe('Ticket and Timeline', () => {
     await pool!.query('DELETE FROM ticket_followers');
     await pool!.query('DELETE FROM ticket_tags');
     await pool!.query('DELETE FROM tickets');
+    await pool!.query('DELETE FROM transitions');
     await pool!.query('DELETE FROM statuses');
     await pool!.query('DELETE FROM ticket_types');
     await pool!.query('DELETE FROM priorities');
@@ -191,7 +203,7 @@ describe('Ticket and Timeline', () => {
     newStatusId = await insertStatus('New', 'new', 1, true);
     openStatusId = await insertStatus('Open', 'open', 2, false);
     await insertStatus('Pending', 'pending', 3, false);
-    await insertStatus('Resolved', 'resolved', 4, false);
+    resolvedStatusId = await insertStatus('Resolved', 'resolved', 4, false);
     closedStatusId = await insertStatus('Closed', 'closed', 5, false);
 
     ticket = new PostgresTicket(pool!);
@@ -364,6 +376,84 @@ describe('Ticket and Timeline', () => {
         id: t.id,
         statusId: crypto.randomUUID(),
       })).rejects.toThrow(/Status not found or inactive/);
+    });
+
+    // ── S2: the Status change must be a permitted Workspace transition ──────
+
+    /** Insert one permitted transition row for the fixture Workspace. */
+    async function addTransition(fromStatusId: string, toStatusId: string): Promise<void> {
+      await pool!.query(
+        `INSERT INTO transitions (workspace_id, from_status_id, to_status_id)
+         VALUES ($1, $2, $3)`,
+        [wsId, fromStatusId, toStatusId],
+      );
+    }
+
+    async function createTicket(title: string) {
+      return ticket.createTicket({
+        workspaceId: wsId as any,
+        title,
+        createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
+      });
+    }
+
+    it('applies a transition the Workspace lists', async () => {
+      await addTransition(newStatusId, openStatusId);
+      const t = await createTicket('Listed transition');
+
+      const updated = await ticket.updateTicket({ id: t.id, statusId: openStatusId });
+
+      expect(updated.statusId).toBe(openStatusId);
+      expect(updated.statusName).toBe('Open');
+      expect(updated.statusCategory).toBe('open');
+
+      // The Status change is recorded on the Timeline (S2).
+      const changes = await ticket.getTimeline(t.id, { kind: 'status_change' });
+      expect(changes).toHaveLength(1);
+      expect(changes[0]!.content).toContain('New');
+      expect(changes[0]!.content).toContain('Open');
+      expect(changes[0]!.visibility).toBe('public');
+    });
+
+    it('rejects a transition the Workspace does not list', async () => {
+      await addTransition(newStatusId, openStatusId);
+      const t = await createTicket('Unlisted transition');
+
+      await expect(ticket.updateTicket({ id: t.id, statusId: closedStatusId }))
+        .rejects.toThrow(/not allowed in this Workspace/);
+
+      // Rejected input leaves the Ticket and its Timeline unchanged.
+      const reread = await ticket.getTicket(wsId as any, t.id);
+      expect(reread!.statusId).toBe(newStatusId);
+      const changes = await ticket.getTimeline(t.id, { kind: 'status_change' });
+      expect(changes).toHaveLength(0);
+    });
+
+    it('allows any active Status when the Workspace has no transitions configured', async () => {
+      const t = await createTicket('No transitions configured');
+
+      const updated = await ticket.updateTicket({ id: t.id, statusId: resolvedStatusId });
+
+      expect(updated.statusId).toBe(resolvedStatusId);
+      expect(updated.statusCategory).toBe('resolved');
+    });
+
+    it('does not require a transition when the Status does not change', async () => {
+      await addTransition(newStatusId, openStatusId);
+      const t = await createTicket('Same status');
+
+      const updated = await ticket.updateTicket({
+        id: t.id,
+        title: 'Same status renamed',
+        statusId: newStatusId,
+      });
+
+      expect(updated.title).toBe('Same status renamed');
+      expect(updated.statusId).toBe(newStatusId);
+      const changes = await ticket.getTimeline(t.id, { kind: 'status_change' });
+      expect(changes).toHaveLength(0);
     });
   });
 

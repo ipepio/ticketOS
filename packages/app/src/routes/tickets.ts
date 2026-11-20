@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getIdentity, getTicket, getAudit } from '../app.js';
 import { z } from 'zod';
-import { ConfigurationNotFoundError } from '@ticketos/domain';
+import { ConfigurationNotFoundError, ConfigurationValidationError } from '@ticketos/domain';
 import { PostgresWorkflowConfiguration } from '../workflow/config-module.js';
 import { getPool } from '../db/connection.js';
 
@@ -344,6 +344,14 @@ export async function registerTicketRoutes(
 
       return reply.send(updated);
     } catch (err) {
+      // S2: a Status change the Workspace transitions do not permit is a client
+      // error with a stable code, not a 500.
+      if (err instanceof ConfigurationValidationError) {
+        return reply.status(400).send({
+          error: err.message,
+          code: err.code,
+        });
+      }
       if (err instanceof ConfigurationNotFoundError) {
         return reply.status(400).send({
           error: err.message,
