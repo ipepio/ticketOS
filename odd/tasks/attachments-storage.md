@@ -31,8 +31,8 @@ runtime failure."
 
 | ID | Spec | Route | Commit |
 | --- | --- | --- | --- |
-| T1 | S2, S3 (14–16) | worker: storage selection policy (complete/incomplete/missing matrix) + startup behavior, unit seam | — |
-| T2 | S2, S3 (13), dependency | worker: S3 adapter (@aws-sdk/client-s3) + MinIO dev service + upload/download e2e against MinIO | — |
+| T1 | S2, S3 (14–16) | worker: storage selection policy (complete/incomplete/missing matrix) + startup behavior, unit seam | fa1e5f6 |
+| T2 | S2, S3 (13), dependency | worker: S3 adapter (@aws-sdk/client-s3) + MinIO dev service + upload/download e2e against MinIO | fa1e5f6 (adapter) + seaweedfs swap (owner decision L3); e2e lands with T3 |
 | T3 | S1, S3 (11–12) | worker: F8 hardening audit (validation, internal-note isolation, audit) + local-storage journeys | — |
 
 ## Log
@@ -43,3 +43,11 @@ L2 (dependency authorization): the spec's F9 mandates an S3 adapter and dev MinI
 the tree. `@aws-sdk/client-s3` is authorized as the single new dependency (standard, endpoint-compatible
 with MinIO/R2/self-hosted). Docker dev gains a MinIO service with persistent volume, healthcheck, bucket
 init, and app env vars per S2.
+
+L3 (owner decision, 2026-11-20): Docker Hub rejects the pull of `minio/minio` from this network
+("pull access denied ... repository does not exist"), so the dev S3 service is SeaweedFS
+(`chrislusf/seaweedfs:latest`, image already local) instead of MinIO — owner selected it explicitly from
+the locally available S3-compatible images. The S3 gateway (port 8333, host 9100) speaks the same
+protocol the adapter targets; verified with a live SDK roundtrip: headBucket -> createBucket ->
+put -> get against http://localhost:9100 with forcePathStyle. The spec's "MinIO" is satisfied in
+intent by a real S3 service; swapping back to MinIO later is a compose-only change.

@@ -32,16 +32,19 @@ services:
       timeout: 3s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ticketos}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ticketos-dev-secret}
+  # F9: development S3-compatible object store. The spec names MinIO, but the
+  # owner chose SeaweedFS (local image, pull of minio/minio blocked in this
+  # network; decision recorded in odd/tasks/attachments-storage.md). The S3
+  # gateway speaks the same protocol the adapter targets.
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: >-
+      server -dir=/data -master.volumeSizeLimitMB=1024
+      -s3 -s3.port=8333
     volumes:
-      - miniodata:/data
+      - seaweeddata:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9333/cluster/status"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -53,19 +56,19 @@ services:
     environment:
       DATABASE_URL: postgresql://ticketos:ticketos@postgres:5432/ticketos
       # F9/S2: the local-volume adapter is the Docker default and uses the
-      # existing Attachment volume below. To run Docker against MinIO instead,
+      # existing Attachment volume. To run Docker against SeaweedFS S3 instead,
       # replace these two lines with the S3 block that follows them.
       ATTACHMENT_STORAGE_ADAPTER: local
       ATTACHMENT_LOCAL_DIR: /var/lib/attachments
       # ATTACHMENT_STORAGE_ADAPTER: s3
       # ATTACHMENT_S3_BUCKET: ticketos-attachments
       # ATTACHMENT_S3_REGION: us-east-1
-      # ATTACHMENT_S3_ENDPOINT: http://minio:9000
+      # ATTACHMENT_S3_ENDPOINT: http://seaweedfs:8333
       # ATTACHMENT_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-ticketos}
       # ATTACHMENT_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-...}
       # ATTACHMENT_S3_FORCE_PATH_STYLE: "true"
       # An incomplete S3 configuration aborts startup; it is never local mode.
-      # Switching to S3 also wants a `minio` service_healthy dependency.
+      # Switching to S3 also wants a `seaweedfs` service_healthy dependency.
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production-32-chars}
       REPLY_TOKEN_SECRET: ${SESSION_SECRET:-change-me-in-production-32-chars}
       SMTP_HOST: smtp
@@ -137,4 +140,4 @@ services:
 
 volumes:
   pgdata:
-  miniodata:
+  seaweeddata:

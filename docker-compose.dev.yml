@@ -7,11 +7,10 @@ services:
     environment:
       LOG_LEVEL: info
 
-  # Host access to the development MinIO instance: API on 9100, console on 9101.
-  minio:
+  # Host access to the development SeaweedFS S3 gateway: API on 9100.
+  seaweedfs:
     ports:
-      - "9100:9000"
-      - "9101:9001"
+      - "9100:8333"
 
   worker:
     volumes:
