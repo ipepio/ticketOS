@@ -12,6 +12,7 @@ import { PostgresWorkflowConfiguration } from './workflow/config-module.js';
 import type { WorkflowConfigurationModule } from '@ticketos/domain';
 import { PostgresTicket } from './ticket/postgres.js';
 import type { OutboxModule, AuditModule } from '@ticketos/domain';
+import { initializeAttachmentStorage, type ResolvedStorage } from './storage/selection.js';
 import fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
@@ -29,6 +30,14 @@ let identity: PostgresIdentity | null = null;
 let workspace: PostgresWorkspace | null = null;
 let workflowConfiguration: WorkflowConfigurationModule | null = null;
 let ticket: PostgresTicket | null = null;
+let storage: ResolvedStorage | null = null;
+
+export function getStorage(): ResolvedStorage {
+  if (!storage) {
+    throw new Error('Attachment storage not initialized. Call initApp() first.');
+  }
+  return storage;
+}
 
 export function getTicket(): PostgresTicket {
   if (!ticket) {
@@ -102,6 +111,18 @@ export async function initApp(config: Config): Promise<{
           : undefined,
     },
   });
+
+  // Resolve Attachment storage before serving traffic (F9/S2). An incomplete S3
+  // configuration, or a configured S3 endpoint that is unavailable, aborts
+  // startup instead of degrading to the local Attachment volume.
+  storage = await initializeAttachmentStorage(config);
+  app.log.info(
+    {
+      storageMode: storage.mode,
+      bucket: storage.mode === 's3' ? storage.bucket : undefined,
+    },
+    'attachment storage ready',
+  );
 
   // Register plugins
   await app.register(fastifyCors, {

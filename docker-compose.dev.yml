@@ -7,6 +7,12 @@ services:
     environment:
       LOG_LEVEL: info
 
+  # Host access to the development MinIO instance: API on 9100, console on 9101.
+  minio:
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+
   worker:
     volumes:
       - ./packages/worker/src:/app/packages/worker/src

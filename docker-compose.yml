@@ -32,16 +32,42 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ticketos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-ticketos-dev-secret}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql://ticketos:ticketos@postgres:5432/ticketos
+      # F9/S2: the local-volume adapter is the Docker default and uses the
+      # existing Attachment volume below. To run Docker against MinIO instead,
+      # replace these two lines with the S3 block that follows them.
       ATTACHMENT_STORAGE_ADAPTER: local
       ATTACHMENT_LOCAL_DIR: /var/lib/attachments
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production-use-32-chars-min}
-      REPLY_TOKEN_SECRET: ${REPLY_TOKEN_SECRET:-change-me-in-production-use-32-chars-min}
+      # ATTACHMENT_STORAGE_ADAPTER: s3
+      # ATTACHMENT_S3_BUCKET: ticketos-attachments
+      # ATTACHMENT_S3_REGION: us-east-1
+      # ATTACHMENT_S3_ENDPOINT: http://minio:9000
+      # ATTACHMENT_S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-ticketos}
+      # ATTACHMENT_S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-...}
+      # ATTACHMENT_S3_FORCE_PATH_STYLE: "true"
+      # An incomplete S3 configuration aborts startup; it is never local mode.
+      # Switching to S3 also wants a `minio` service_healthy dependency.
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production-32-chars}
+      REPLY_TOKEN_SECRET: ${SESSION_SECRET:-change-me-in-production-32-chars}
       SMTP_HOST: smtp
       SMTP_PORT: "1025"
       SMTP_SECURE: "false"
@@ -63,7 +89,8 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://ticketos:ticketos@postgres-e2e:5432/ticketos_e2e
+      DATABASE_URL: >-
+        postgresql://ticketos:ticketos@postgres-e2e:5432/ticketos_e2e
       ATTACHMENT_STORAGE_ADAPTER: local
       ATTACHMENT_LOCAL_DIR: /tmp/ticketos-e2e-attachments
       SESSION_SECRET: e2e-session-secret-with-at-least-32-characters
@@ -93,8 +120,8 @@ services:
       DATABASE_URL: postgresql://ticketos:ticketos@postgres:5432/ticketos
       ATTACHMENT_STORAGE_ADAPTER: local
       ATTACHMENT_LOCAL_DIR: /var/lib/attachments
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production-use-32-chars-min}
-      REPLY_TOKEN_SECRET: ${REPLY_TOKEN_SECRET:-change-me-in-production-use-32-chars-min}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production-32-chars}
+      REPLY_TOKEN_SECRET: ${SESSION_SECRET:-change-me-in-production-32-chars}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       postgres:
@@ -110,3 +137,4 @@ services:
 
 volumes:
   pgdata:
+  miniodata:
