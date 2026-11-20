@@ -40,12 +40,17 @@ const MIGRATIONS = [
     size BIGINT NOT NULL CHECK (size >= 0),
     storage_key TEXT,
     status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'quarantine', 'scanning', 'available', 'rejected', 'deleted')),
+    visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'internal')),
     scan_result TEXT,
     uploader_id UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS idx_attachments_ticket ON attachments (ticket_id)`,
+  // Migration 028: an Attachment records whether it is readable by every
+  // Ticket reader or only by readers holding `tickets:internal-note`. Repeated
+  // here idempotently so the suite owns the schema it asserts on.
+  `ALTER TABLE attachments ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'internal'))`,
   `CREATE INDEX IF NOT EXISTS idx_attachments_status ON attachments (status)`,
   `CREATE INDEX IF NOT EXISTS idx_attachments_uploader ON attachments (uploader_id)`,
 ];
@@ -182,6 +187,87 @@ describe('Attachment lifecycle', () => {
       await attachment.deleteAttachment(a.id);
       const updated = await attachment.getAttachment(a.id);
       expect(updated!.status).toBe('deleted');
+    });
+  });
+
+  describe('createStoredAttachment', () => {
+    it('persists the object key, the Internal-Note visibility and an available status', async () => {
+      const stored = await attachment.createStoredAttachment({
+        ticketId,
+        filename: 'stored.pdf',
+        mimeType: 'application/pdf',
+        size: 4096,
+        storageKey: `attachments/${ticketId}/object-1`,
+        uploaderId: userId,
+        visibility: 'public',
+      });
+
+      expect(stored.status).toBe('available');
+      expect(stored.visibility).toBe('public');
+
+      const { rows } = await pool!.query(
+        'SELECT storage_key FROM attachments WHERE id = $1',
+        [stored.id],
+      );
+      expect(rows[0]!.storage_key).toBe(`attachments/${ticketId}/object-1`);
+    });
+
+    it('refuses a Ticket that does not exist and inserts no row', async () => {
+      const before = await pool!.query('SELECT count(*)::int AS n FROM attachments');
+      await expect(
+        attachment.createStoredAttachment({
+          ticketId: crypto.randomUUID(),
+          filename: 'orphan.pdf',
+          mimeType: 'application/pdf',
+          size: 10,
+          storageKey: 'attachments/orphan/object',
+          uploaderId: userId,
+          visibility: 'public',
+        }),
+      ).rejects.toThrow();
+      const after = await pool!.query('SELECT count(*)::int AS n FROM attachments');
+      expect(after.rows[0].n).toBe(before.rows[0].n);
+    });
+  });
+
+  describe('listVisibleAttachments', () => {
+    it('hides Internal-Note Attachments from a reader without the capability', async () => {
+      const visible = await attachment.createStoredAttachment({
+        ticketId, filename: 'public.txt', mimeType: 'text/plain', size: 1,
+        storageKey: 'attachments/t/public', uploaderId: userId, visibility: 'public',
+      });
+      const internal = await attachment.createStoredAttachment({
+        ticketId, filename: 'internal.txt', mimeType: 'text/plain', size: 1,
+        storageKey: 'attachments/t/internal', uploaderId: userId, visibility: 'internal',
+      });
+
+      const requesterView = await attachment.listVisibleAttachments(ticketId, {
+        includeInternal: false,
+      });
+      expect(requesterView.map((a) => a.id)).toEqual([visible.id]);
+
+      const agentView = await attachment.listVisibleAttachments(ticketId, {
+        includeInternal: true,
+      });
+      expect(agentView.map((a) => a.id).sort()).toEqual([visible.id, internal.id].sort());
+    });
+  });
+
+  describe('getAttachmentForDownload', () => {
+    it('returns the metadata together with the stored object key', async () => {
+      const stored = await attachment.createStoredAttachment({
+        ticketId, filename: 'download.txt', mimeType: 'text/plain', size: 3,
+        storageKey: 'attachments/t/download', uploaderId: userId, visibility: 'internal',
+      });
+
+      const found = await attachment.getAttachmentForDownload(stored.id);
+      expect(found).not.toBeNull();
+      expect(found!.storageKey).toBe('attachments/t/download');
+      expect(found!.attachment.visibility).toBe('internal');
+    });
+
+    it('returns null for an attachment that does not exist', async () => {
+      expect(await attachment.getAttachmentForDownload(crypto.randomUUID())).toBeNull();
     });
   });
 

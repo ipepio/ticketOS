@@ -4,14 +4,22 @@ import { z } from 'zod';
 import { ConfigurationNotFoundError, ConfigurationValidationError } from '@ticketos/domain';
 import { PostgresWorkflowConfiguration } from '../workflow/config-module.js';
 import { getPool } from '../db/connection.js';
+import { registerAttachmentRoutes } from './attachments.js';
 
 /**
- * Ticket routes — CRUD, timeline, tags, followers
+ * Ticket routes — CRUD, timeline, tags, followers, attachments
  */
 export async function registerTicketRoutes(
   fastify: FastifyInstance,
-  _config: any,
+  config: any,
 ): Promise<void> {
+  // F8/S1: Attachments live under a Ticket, so their routes are registered from
+  // the same area module. They are their own encapsulated scope because they
+  // need the multipart parser, which no other Ticket route uses.
+  await fastify.register(async (instance) => {
+    await registerAttachmentRoutes(instance, config);
+  });
+
   // GET /api/tickets — list tickets for current workspace
   fastify.get('/api/tickets', async (request, reply) => {
     const sessionId = request.cookies.sessionId;
@@ -53,10 +61,14 @@ export async function registerTicketRoutes(
     }
 
     const ticketModule = getTicket();
+    // `assignedTo` is a filter only when the caller supplied one. Passing `null`
+    // made the list compare `assigned_to = NULL`, which matches no row and left
+    // every Ticket without an assignee invisible to the portal — including the
+    // Ticket whose Attachments the reader is trying to open.
     const tickets = await ticketModule.listTickets(workspaceId, {
       statusId: status || undefined,
       priority: priority as any,
-      assignedTo: assignedTo || null,
+      ...(assignedTo ? { assignedTo } : {}),
     });
 
     return reply.send(tickets);

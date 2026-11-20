@@ -13,6 +13,10 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async store(input: { key: string; data: Buffer; mimeType: string }): Promise<string> {
     const filePath = path.join(this.baseDir, input.key);
+    // Keys are hierarchical (`attachments/<ticketId>/<id>`), so the parent
+    // directories may not exist yet. Creating them is part of storing: without
+    // it a first upload to a Ticket fails with ENOENT.
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, input.data);
     return input.key;
   }

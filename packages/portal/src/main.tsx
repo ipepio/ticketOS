@@ -45,6 +45,18 @@ interface TimelineEntry {
   createdAt: string;
 }
 
+/** An Attachment as the authorized download/list endpoints report it (S1). */
+interface AttachmentItem {
+  id: string;
+  ticketId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  status: string;
+  visibility: 'public' | 'internal';
+  createdAt: string;
+}
+
 interface ConfigurationItem {
   id: string;
   name: string;
@@ -128,6 +140,39 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
     throw error;
   }
   return res.json();
+}
+
+/**
+ * Upload one Attachment (S1). This cannot go through `api()`: the browser owns
+ * the multipart boundary, so no Content-Type may be set by hand.
+ */
+async function uploadAttachment(
+  ticketId: string,
+  file: File,
+  visibility: 'public' | 'internal',
+): Promise<AttachmentItem> {
+  const form = new FormData();
+  form.append('visibility', visibility);
+  form.append('file', file);
+  const res = await fetch(`${API_BASE}/api/tickets/${ticketId}/attachments`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string; code?: string } | null;
+    const error = new Error(body?.error || res.statusText);
+    (error as ApiError).code = body?.code;
+    throw error;
+  }
+  return res.json();
+}
+
+/** Human-readable Attachment size for the sidebar list. */
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // ---------------------------------------------------------------------------
@@ -943,24 +988,50 @@ function AgentQueue({
 function TicketDetail({
   ticket,
   timeline,
+  attachments,
   currentUserId,
   onBack,
   onSendMessage,
   onAddNote,
+  onUploadAttachment,
   role,
 }: {
   ticket: Ticket;
   timeline: TimelineEntry[];
+  attachments: AttachmentItem[];
   currentUserId: string | null;
   onBack: () => void;
   onSendMessage: (content: string) => void;
   onAddNote: (content: string) => void;
+  onUploadAttachment: (file: File, visibility: 'public' | 'internal') => Promise<void>;
   role: string;
 }) {
   const { t } = useI18n();
   const [message, setMessage] = useState('');
   const [note, setNote] = useState('');
   const [replyMode, setReplyMode] = useState<'public' | 'internal'>('public');
+  const [uploading, setUploading] = useState(false);
+  const [attachError, setAttachError] = useState('');
+
+  // S1: an Attachment uploaded while the Internal-Note tab is active is an
+  // Internal-Note Attachment, and Requesters may not create one.
+  const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setAttachError('');
+    try {
+      await onUploadAttachment(
+        file,
+        replyMode === 'internal' && role !== 'requester' ? 'internal' : 'public',
+      );
+    } catch {
+      setAttachError(t('portal.attach_failed'));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubmit = () => {
     if (replyMode === 'public') {
@@ -1085,10 +1156,26 @@ function TicketDetail({
             />
             <div className="reply-box-footer">
               <div className="flex items-center gap-2">
-                <button className="btn btn-ghost btn-sm">
+                {/* S1: the Attach control uploads through the authorized endpoint. */}
+                <label
+                  className="btn btn-ghost btn-sm"
+                  style={{ cursor: uploading ? 'progress' : 'pointer' }}
+                >
                   <IconPaperclip size={16} />
-                  {t('portal.attach')}
-                </button>
+                  {uploading ? t('portal.attach_uploading') : t('portal.attach')}
+                  <input
+                    type="file"
+                    data-testid="attach-input"
+                    onChange={handleFileSelected}
+                    disabled={uploading}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+                {attachError && (
+                  <span className="text-small" role="alert" style={{ color: 'oklch(52% 0.18 25)' }}>
+                    {attachError}
+                  </span>
+                )}
               </div>
               <button
                 className="btn btn-primary btn-sm"
@@ -1143,6 +1230,43 @@ function TicketDetail({
               </div>
             </div>
           )}
+
+          {/* S1: Attachments, listed from the authorized endpoint. The download
+              link is that same endpoint, never a public object URL. */}
+          <div className="card mt-4" data-testid="attachment-list">
+            <div className="card-header">
+              <span className="card-title">{t('portal.attachments')}</span>
+            </div>
+            <div className="card-body">
+              {attachments.length === 0 ? (
+                <p className="text-small text-muted">{t('portal.no_attachments')}</p>
+              ) : (
+                attachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="info-row"
+                    data-testid="attachment-item"
+                  >
+                    <span className="info-value text-small" style={{ wordBreak: 'break-all' }}>
+                      {attachment.visibility === 'internal' && <IconLock size={11} />}{' '}
+                      {attachment.filename}
+                      <span className="text-muted text-small">
+                        {' '}({formatAttachmentSize(attachment.size)})
+                      </span>
+                    </span>
+                    <a
+                      className="text-small"
+                      data-testid="attachment-download"
+                      href={`${API_BASE}/api/tickets/${ticket.id}/attachments/${attachment.id}`}
+                      download={attachment.filename}
+                    >
+                      {t('portal.download')}
+                    </a>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1649,6 +1773,7 @@ function AppContent() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -1783,11 +1908,27 @@ function AppContent() {
       setSelectedTicket(ticket);
       const tl = await api<TimelineEntry[]>(`/api/tickets/${id}/timeline`);
       setTimeline(tl);
+      const files = await api<AttachmentItem[]>(`/api/tickets/${id}/attachments`);
+      setAttachments(files);
       setPage('ticket-detail');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load ticket');
     }
   }, []);
+
+  // S1: upload through the authorized endpoint, then re-read the list the
+  // server reports so the sidebar never shows an Attachment it did not accept.
+  const handleUploadAttachment = useCallback(
+    async (file: File, visibility: 'public' | 'internal') => {
+      if (!selectedTicket) return;
+      await uploadAttachment(selectedTicket.id, file, visibility);
+      const files = await api<AttachmentItem[]>(
+        `/api/tickets/${selectedTicket.id}/attachments`,
+      );
+      setAttachments(files);
+    },
+    [selectedTicket],
+  );
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!selectedTicket) return;
@@ -1931,10 +2072,12 @@ function AppContent() {
           <TicketDetail
             ticket={selectedTicket}
             timeline={timeline}
+            attachments={attachments}
             currentUserId={user?.id ?? null}
             onBack={() => setPage(isAgent ? 'queue' : 'ticket-list')}
             onSendMessage={handleSendMessage}
             onAddNote={handleAddNote}
+            onUploadAttachment={handleUploadAttachment}
             role={workspace?.role ?? 'requester'}
           />
         )}

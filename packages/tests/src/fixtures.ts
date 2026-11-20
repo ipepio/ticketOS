@@ -341,24 +341,39 @@ export async function cleanDatabase(pool: Pool): Promise<void> {
 // Fixture setup / teardown
 // ---------------------------------------------------------------------------
 
-export async function setupFixtures(): Promise<TestFixtures> {
-  const p = await getPool();
-  await cleanDatabase(p);
+/**
+ * Seed the two isolated Workspaces every journey needs into `pool`.
+ *
+ * Exported separately from `setupFixtures` so an E2E file that boots its own
+ * scratch application instance (its own database and port, see
+ * `first-run-onboarding.spec.ts`) can seed exactly the same contract against
+ * that instance instead of the shared one.
+ */
+export async function seedWorkspaces(
+  pool: Pool,
+): Promise<{ workspaceA: TestWorkspace; workspaceB: TestWorkspace }> {
+  await cleanDatabase(pool);
   // `status_categories` is reference data seeded by migration 003 and is not
   // truncated by cleanDatabase, so it survives here. Re-seeding keeps the suite
   // independent from the state of the database it was pointed at.
-  await p.query(
+  await pool.query(
     `INSERT INTO status_categories (name) VALUES ('new'), ('open'), ('pending'), ('resolved'), ('closed')
      ON CONFLICT DO NOTHING`,
   );
+
+  const workspaceA = await buildWorkspace(pool, 'A');
+  const workspaceB = await buildWorkspace(pool, 'B');
+  return { workspaceA, workspaceB };
+}
+
+export async function setupFixtures(): Promise<TestFixtures> {
+  const p = await getPool();
+  const { workspaceA, workspaceB } = await seedWorkspaces(p);
 
   const api = await pwRequest.newContext({
     baseURL: BASE_URL,
     extraHTTPHeaders: { 'Content-Type': 'application/json' },
   });
-
-  const workspaceA = await buildWorkspace(p, 'A');
-  const workspaceB = await buildWorkspace(p, 'B');
 
   return {
     workspaceA,
