@@ -69,10 +69,22 @@ export async function registerAuthRoutes(
 
     try {
       const result = await identity.requestMagicLink(body.email, workspaceId as any);
-      // Build the full magic-link URL that the email should contain
+      // Build the full magic-link URL that the email should contain.
+      // The link is already durable at this point (magic_links row plus outbox
+      // event), so delivery is best effort: a transport failure must not change
+      // the response. S1 requires the same answer for every address, and a 500
+      // for eligible addresses only would reveal which Workspace Memberships
+      // exist.
       const verifyUrl = `${config.PUBLIC_APP_URL}/?token=${result.token}`;
-      await sendMagicLinkEmail(config, { to: body.email, verifyUrl });
-      fastify.log.info({ email: body.email }, 'Magic link sent');
+      try {
+        await sendMagicLinkEmail(config, { to: body.email, verifyUrl });
+        fastify.log.info({ email: body.email }, 'Magic link sent');
+      } catch (err) {
+        fastify.log.warn(
+          { err, email: body.email },
+          'Magic link delivery failed; the issued link stays queued',
+        );
+      }
       return reply.send({ message: 'Magic link sent' });
     } catch (err) {
       fastify.log.error({ err }, 'Magic link request failed');
