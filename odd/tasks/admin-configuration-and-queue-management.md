@@ -198,9 +198,7 @@ only `New` as default; Priorities get 1..4 with only `normal` as default; Ticket
 `Incident` as default. Verified on a fresh database: bootstrap returns 200 with a `workspaceId` and the
 seeded rows are exactly that shape. The app unit suite still passes 205/205.
 
-T15 (open, follow-up): there is no regression test for `POST /api/setup/bootstrap`, which is why the
-whole first-run path stayed broken through the previous gate. A fresh-install test must assert that
-bootstrap succeeds and that the seeded configuration obeys the ordering and single-default rules.
+T15 (closed 2026-11-20): `packages/app/src/routes/setup.test.ts` now covers the first-run contract through the app instance and `inject()`: status 200/`configured:false` on a fresh install, 400 on an incomplete body with zero writes, 200 on bootstrap with the seeded rows obeying the ordering (Statuses 1..5, Priorities 1..4, Ticket Types 1..2) and single-default rules (only `New`, only `normal`, only `Incident`), `Inbox` with `workspace-agents`, an admin membership plus issued session, and 409 on a second bootstrap with the workspace count unchanged. The test runs against a scratch database (`ticketos_setup_test`, created and dropped by the suite, mirroring how e2e owns `ticketos_e2e`) so the guard is observed on a genuinely fresh installation. RED→GREEN proven: reintroducing the original `access_mode = 'open'` seeding defect makes 3 of 5 tests fail with the exact "Bootstrap failed" 500; restoring the fix makes them pass. App suite is now 210/210. `packages/app/src/config.ts` exports `configSchema` so tests can parse a valid `Config` without environment mutation.
 
 L13 (owner-reported defect, root cause): "los tickets no se están creando".
 Reproduced through the real portal with Playwright against a running server: `POST /api/tickets` returned 200
@@ -212,10 +210,7 @@ the Workspace and otherwise resolves the Workspace's first Queue, then persists 
 INSERT (ADR 0010). Verified: a Ticket created through the API now lands in `Inbox`, and the data shows new
 rows carrying a queue while the three pre-fix rows stay unrouted.
 
-T16 (open, follow-up): rows created before this fix keep `queue_id = NULL`. A backfill (or a Queue view that
-lists unrouted Tickets explicitly) is still required so historical Tickets are not silently invisible. The
-correct behaviour — hide them or show them under an "Unrouted" section — is a product decision, not an
-implementation detail.
+T16 (closed, owner decision 2026-11-20): rows created before the queue-routing fix keep `queue_id = NULL`. The owner decided that no backfill and no "Unrouted" section are needed because the pre-fix rows belong to a development database, not production, so there is no data worth repairing. If ticketOS ever carries production data, revisit this decision before relying on Queue totals.
 
 L14 (delivery): the work landed as nine commits on the branch `feat/admin-configuration-and-queues`
 (migration, domain, app policy, app routes, portal, e2e, docs, chores, app fixtures). The work unit

@@ -7,7 +7,7 @@ const environmentBoolean = z.preprocess(
   z.boolean(),
 );
 
-const configSchema = z.object({
+export const configSchema = z.object({
   DATABASE_URL: z.string().url(),
   ATTACHMENT_STORAGE_ADAPTER: z.enum(['local', 's3']).default('local'),
   ATTACHMENT_LOCAL_DIR: z.string().default('./storage/attachments'),
