@@ -1,9 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { getIdentity, getTicket, getAudit } from '../app.js';
+import type { AppModules } from './dependencies.js';
 import { z } from 'zod';
 import { ConfigurationNotFoundError, ConfigurationValidationError } from '@ticketos/domain';
-import { PostgresWorkflowConfiguration } from '../workflow/config-module.js';
-import { getPool } from '../db/connection.js';
 import { registerAttachmentRoutes } from './attachments.js';
 
 /**
@@ -12,12 +10,15 @@ import { registerAttachmentRoutes } from './attachments.js';
 export async function registerTicketRoutes(
   fastify: FastifyInstance,
   config: any,
+  modules: AppModules,
 ): Promise<void> {
+  const { identity, ticket: ticketModule, audit, workflowConfiguration } = modules;
+
   // F8/S1: Attachments live under a Ticket, so their routes are registered from
   // the same area module. They are their own encapsulated scope because they
   // need the multipart parser, which no other Ticket route uses.
   await fastify.register(async (instance) => {
-    await registerAttachmentRoutes(instance, config);
+    await registerAttachmentRoutes(instance, config, modules);
   });
 
   // GET /api/tickets — list tickets for current workspace
@@ -27,7 +28,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -60,7 +60,6 @@ export async function registerTicketRoutes(
       }
     }
 
-    const ticketModule = getTicket();
     // `assignedTo` is a filter only when the caller supplied one. Passing `null`
     // made the list compare `assigned_to = NULL`, which matches no row and left
     // every Ticket without an assignee invisible to the portal — including the
@@ -81,7 +80,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -93,7 +91,6 @@ export async function registerTicketRoutes(
     }
 
     const ticketId = (request.params as { id: string }).id;
-    const ticketModule = getTicket();
     const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
@@ -118,7 +115,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -139,8 +135,7 @@ export async function registerTicketRoutes(
       return reply.status(403).send({ error: 'Access denied' });
     }
 
-    const configModule = new PostgresWorkflowConfiguration(getPool());
-    const config = await configModule.listSelectableConfiguration(workspaceId);
+    const config = await workflowConfiguration.listSelectableConfiguration(workspaceId);
     return reply.send(config);
   });
 
@@ -151,7 +146,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -186,8 +180,7 @@ export async function registerTicketRoutes(
     }
 
     // Fetch active configuration (S9, S2 — workspace-isolated)
-    const configModule = new PostgresWorkflowConfiguration(getPool());
-    const config = await configModule.listSelectableConfiguration(workspaceId);
+    const config = await workflowConfiguration.listSelectableConfiguration(workspaceId);
 
     // Validate & resolve ticketTypeId (S9)
     if (body.ticketTypeId !== undefined) {
@@ -250,7 +243,6 @@ export async function registerTicketRoutes(
 
     // Create ticket (DB validates workspace ownership; catch maps to 400)
     try {
-      const ticketModule = getTicket();
       const ticket = await ticketModule.createTicket({
         workspaceId,
         title: body.title,
@@ -273,7 +265,6 @@ export async function registerTicketRoutes(
       });
 
       // Audit event
-      const audit = getAudit();
       await audit.append({
         kind: 'ticket-created',
         actorUserId: session.userId,
@@ -300,7 +291,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -321,7 +311,6 @@ export async function registerTicketRoutes(
       assignedTo?: string;
     };
 
-    const ticketModule = getTicket();
     const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
@@ -381,7 +370,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -393,7 +381,6 @@ export async function registerTicketRoutes(
     }
 
     const ticketId = (request.params as { id: string }).id;
-    const ticketModule = getTicket();
 
     const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
@@ -429,7 +416,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -451,7 +437,6 @@ export async function registerTicketRoutes(
       return reply.status(400).send({ error: 'kind and content are required' });
     }
 
-    const ticketModule = getTicket();
     const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found' });
@@ -475,7 +460,6 @@ export async function registerTicketRoutes(
       return reply.status(401).send({ error: 'Authentication required' });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       return reply.status(401).send({ error: 'Session expired' });
@@ -487,7 +471,6 @@ export async function registerTicketRoutes(
     }
 
     const ticketId = (request.params as { id: string }).id;
-    const ticketModule = getTicket();
 
     const ticket = await ticketModule.getTicket(workspaceId, ticketId);
     if (!ticket) {

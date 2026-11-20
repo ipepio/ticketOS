@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { AttachmentModule, Attachment, CreateAttachmentInput } from '@ticketos/domain';
-import type { UserId } from '@ticketos/shared';
+import type { UserId, WorkspaceId } from '@ticketos/shared';
+import { PostgresAudit } from '../db/audit.js';
 
 /**
  * Attachment metadata persistence (F8/S1).
@@ -45,7 +46,14 @@ export interface Queryable {
 }
 
 export class PostgresAttachment implements AttachmentModule {
-  constructor(private pool: Pool) {}
+  private readonly audit: PostgresAudit;
+
+  constructor(private pool: Pool) {
+    // The upload transaction also records its audit event (see
+    // `createStoredAttachmentWithAudit`), the same way the workflow
+    // configuration module owns the audit writer it commits with.
+    this.audit = new PostgresAudit(pool);
+  }
 
   /** Lifecycle step 1 (unchanged): request metadata before a scan or upload. */
   async createAttachment(input: CreateAttachmentInput): Promise<AttachmentWithVisibility> {
@@ -86,6 +94,46 @@ export class PostgresAttachment implements AttachmentModule {
       ],
     );
     return this.mapAttachment(rows[0]!);
+  }
+
+  /**
+   * Store the metadata of an uploaded object together with its audit event.
+   *
+   * Both writes share one transaction, so a failed audit never leaves an
+   * Attachment row behind: either the metadata and the audit event commit, or
+   * neither does. The caller owns the object bytes and removes them when this
+   * rejects (S1: "Attachment metadata and object lifecycle remain consistent if
+   * upload fails").
+   */
+  async createStoredAttachmentWithAudit(
+    input: StoreAttachmentInput & { workspaceId: WorkspaceId },
+  ): Promise<AttachmentWithVisibility> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const row = await this.createStoredAttachment(input, client);
+      await this.audit.appendViaClient(client, {
+        kind: 'attachment-uploaded',
+        actorUserId: input.uploaderId,
+        workspaceId: input.workspaceId,
+        details: {
+          ticketId: input.ticketId,
+          attachmentId: row.id,
+          filename: input.filename,
+          mimeType: input.mimeType,
+          size: input.size,
+          visibility: input.visibility,
+          storageKey: input.storageKey,
+        },
+      });
+      await client.query('COMMIT');
+      return row;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getAttachment(id: string): Promise<AttachmentWithVisibility | null> {

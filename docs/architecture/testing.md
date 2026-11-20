@@ -43,10 +43,24 @@ reuses the development database.
 
 ## Architecture acceptance checks
 
-Import/dependency rules are documented as a guardrail but have not yet been enforced by an
-executable architecture check (S5). The CI workflow runs typecheck, lint, unit tests, e2e tests
-and build; none of those jobs invoke a dedicated dependency-audit tool or negative-fixtures runner.
-An authorized task may introduce one.
+`pnpm check:arch` runs `scripts/check-architecture.ts` (via `tsx`, no new dependencies). It reads
+`packages/*/src/**/*.ts` and `.tsx` production sources (colocated `*.test.ts` files are not part of
+the shipped dependency graph), resolves every import from the TypeScript AST to an absolute file —
+relative paths, `@ticketos/*` workspace package names and their `exports`, and tsconfig `paths`
+aliases — and then applies the rules below. Dynamic `import()`, `export ... from` and
+`import x = require(...)` are included, so aliases, re-exports and package names cannot hide a
+violation. Each violation prints as `file:line [rule] reason` and the command exits 1; on success it
+prints a one-line summary and exits 0. The CI job `architecture-checks` in
+`.github/workflows/ci.yml` runs `pnpm install --frozen-lockfile` and then `pnpm check:arch`.
+
+`scripts/arch-fixtures/` holds two miniature monorepos: `clean/` must report zero violations, and
+`violating/` carries one deliberately violating file per boundary (including alias, re-export and
+dynamic-import bypass attempts) that must be reported. `scripts/check-architecture.test.ts` proves
+both, materializing the fixture sources in a temp directory and asserting the exact violations:
+
+```bash
+pnpm --filter @ticketos/app exec vitest run --root ../.. --globals scripts/check-architecture.test.ts
+```
 
 - Domain must not import Fastify, `pg`, HTTP clients, configuration or infrastructure.
 - Commands/queries must not import route handlers, transport DTOs or concrete SQL/gateway adapters.

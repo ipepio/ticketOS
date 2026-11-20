@@ -1,5 +1,7 @@
 import type { Pool } from 'pg';
+import crypto from 'node:crypto';
 import type {
+  AuditModule,
   WorkspaceModule,
   Workspace,
   Organization,
@@ -34,6 +36,46 @@ export class ConfigurationNotFoundError extends Error {
     super(message);
     this.name = 'ConfigurationNotFoundError';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace administration read models
+// ---------------------------------------------------------------------------
+
+/**
+ * One Organization with its member count, as the Workspace Admin API lists it.
+ *
+ * These read models exist so the route layer never assembles SQL rows: the
+ * admin endpoints are a plain read/write of Workspace data, and their shapes
+ * are mirrored structurally in `routes/dependencies.ts` (a route must not
+ * import a SQL adapter).
+ */
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  memberCount: number;
+  createdAt: string;
+}
+
+/** One Workspace Membership with the User and Organization context it joins. */
+export interface WorkspaceMemberSummary {
+  id: string;
+  userId: string;
+  email: string;
+  name: string | null;
+  role: Role;
+  status: string;
+  organizationId: string | null;
+  organizationName: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
+}
+
+/** The input the first-run wizard supplies to `bootstrapInstallation`. */
+export interface BootstrapInstallationInput {
+  workspaceName: string;
+  adminEmail: string;
+  timezone?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +637,298 @@ export class PostgresWorkspace implements WorkspaceModule {
       [userId, workspaceId],
     );
     return adminRows.length > 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Workspace administration (routes/admin.ts delegates here)
+  // ---------------------------------------------------------------------------
+
+  /** Organizations of one Workspace with their member count. */
+  async listOrganizationSummaries(
+    workspaceId: WorkspaceId,
+  ): Promise<OrganizationSummary[]> {
+    const { rows } = await this.pool.query(
+      `SELECT o.id, o.name, o.created_at,
+              count(wm.id)::int AS member_count
+       FROM organizations o
+       LEFT JOIN workspace_memberships wm ON wm.organization_id = o.id
+       WHERE o.workspace_id = $1
+       GROUP BY o.id
+       ORDER BY o.name`,
+      [workspaceId],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      memberCount: row.member_count,
+      createdAt: row.created_at,
+    }));
+  }
+
+  /** Create one Organization; it has no members yet. */
+  async createOrganizationSummary(
+    workspaceId: WorkspaceId,
+    name: string,
+  ): Promise<OrganizationSummary> {
+    const { rows } = await this.pool.query(
+      `INSERT INTO organizations (workspace_id, name)
+       VALUES ($1, $2) RETURNING id, name, created_at`,
+      [workspaceId, name],
+    );
+    return {
+      id: rows[0]!.id,
+      name: rows[0]!.name,
+      memberCount: 0,
+      createdAt: rows[0]!.created_at,
+    };
+  }
+
+  /** Members of one Workspace with the User and Organization context they join. */
+  async listWorkspaceMemberSummaries(
+    workspaceId: WorkspaceId,
+  ): Promise<WorkspaceMemberSummary[]> {
+    const { rows } = await this.pool.query(
+      `SELECT wm.id, u.id AS user_id, u.email, u.display_name, wm.role,
+              wm.status, wm.organization_id, o.name AS organization_name,
+              u.last_seen_at, wm.created_at
+       FROM workspace_memberships wm
+       JOIN users u ON u.id = wm.user_id
+       LEFT JOIN organizations o ON o.id = wm.organization_id
+       WHERE wm.workspace_id = $1
+       ORDER BY u.email`,
+      [workspaceId],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      email: row.email,
+      name: row.display_name,
+      role: row.role as Role,
+      status: row.status,
+      organizationId: row.organization_id,
+      organizationName: row.organization_name,
+      lastSeenAt: row.last_seen_at,
+      createdAt: row.created_at,
+    }));
+  }
+
+  /**
+   * Add (or reactivate) one Workspace Member.
+   *
+   * The User and the Membership are written in one transaction, so a failed
+   * insert never leaves a User without a role in the Workspace that created it.
+   */
+  async addWorkspaceMember(
+    workspaceId: WorkspaceId,
+    input: { email: string; name: string | null; role: Role; organizationId: string | null },
+  ): Promise<{ id: string }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: users } = await client.query(
+        `INSERT INTO users (email, display_name)
+         VALUES ($1, $2)
+         ON CONFLICT (email) DO UPDATE SET display_name = COALESCE(EXCLUDED.display_name, users.display_name)
+         RETURNING id`,
+        [input.email, input.name],
+      );
+      const { rows } = await client.query(
+        `INSERT INTO workspace_memberships (user_id, workspace_id, role, organization_id, status)
+         VALUES ($1, $2, $3, $4, 'active')
+         ON CONFLICT (user_id, workspace_id) DO UPDATE
+         SET role = EXCLUDED.role, organization_id = EXCLUDED.organization_id, status = 'active'
+         RETURNING id`,
+        [users[0]!.id, workspaceId, input.role, input.organizationId],
+      );
+      await client.query('COMMIT');
+      return { id: rows[0]!.id };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Update one Workspace Membership.
+   *
+   * `hasOrganizationId` mirrors the request body's ownership of the field: the
+   * SQL only touches `organization_id` when the caller supplied it, so an empty
+   * Organization stays `NULL` instead of being overwritten.
+   */
+  async updateWorkspaceMember(
+    workspaceId: WorkspaceId,
+    membershipId: string,
+    input: {
+      role?: Role;
+      hasOrganizationId: boolean;
+      organizationId?: string | null;
+      status?: 'active' | 'inactive';
+    },
+  ): Promise<{ id: string } | null> {
+    const { rows } = await this.pool.query(
+      `UPDATE workspace_memberships
+       SET role = COALESCE($1, role),
+           organization_id = CASE WHEN $2::boolean THEN $3::uuid ELSE organization_id END,
+           status = COALESCE($4, status)
+       WHERE id = $5 AND workspace_id = $6
+       RETURNING id`,
+      [
+        input.role ?? null,
+        input.hasOrganizationId,
+        input.organizationId ?? null,
+        input.status ?? null,
+        membershipId,
+        workspaceId,
+      ],
+    );
+    if (!rows[0]) return null;
+    return { id: rows[0].id };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Installation bootstrap (routes/setup.ts delegates here)
+  // ---------------------------------------------------------------------------
+
+  /** How many Workspaces exist. The installation is configured once `> 0`. */
+  async countWorkspaces(): Promise<number> {
+    const { rows } = await this.pool.query(
+      'SELECT count(*)::int AS count FROM workspaces',
+    );
+    return rows[0]?.count ?? 0;
+  }
+
+  /**
+   * Create the first Workspace, its installing admin and the seeded
+   * configuration, and issue the admin's session — in one transaction.
+   *
+   * Every statement keeps the order and shape the first-run wizard relied on:
+   * the Workspace, the verified User, the admin Membership, the Inbox Queue,
+   * the default Statuses, Priorities, Ticket Types, business calendar, session
+   * row and audit event. The audit event is appended through the audit module
+   * exactly where the route used to append it.
+   */
+  async bootstrapInstallation(
+    input: BootstrapInstallationInput,
+    audit: AuditModule,
+  ): Promise<{ workspaceId: string; sessionId: string }> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // 1. Create workspace
+      const { rows: wsRows } = await client.query(
+        'INSERT INTO workspaces (name) VALUES ($1) RETURNING id',
+        [input.workspaceName],
+      );
+      const workspaceId = wsRows[0]!.id;
+
+      // 2. Create user
+      const { rows: userRows } = await client.query(
+        'INSERT INTO users (email, verified_at) VALUES ($1, NOW()) RETURNING id',
+        [input.adminEmail],
+      );
+      const userId = userRows[0]!.id;
+
+      // 3. Create membership as workspace-admin (includes all capabilities)
+      await client.query(
+        `INSERT INTO workspace_memberships (user_id, workspace_id, role)
+         VALUES ($1, $2, 'workspace-admin')`,
+        [userId, workspaceId],
+      );
+
+      // 4. Create default Inbox queue
+      await client.query(
+        `INSERT INTO queues (workspace_id, name, access_mode)
+         VALUES ($1, 'Inbox', 'workspace-agents')`,
+        [workspaceId],
+      );
+
+      // 5. Provision defaults (statuses, priorities, ticket types)
+      const defaultStatuses = [
+        { name: 'New', category: 'new', sortOrder: 1 },
+        { name: 'Open', category: 'open', sortOrder: 2 },
+        { name: 'Pending', category: 'pending', sortOrder: 3 },
+        { name: 'Resolved', category: 'resolved', sortOrder: 4 },
+        { name: 'Closed', category: 'closed', sortOrder: 5 },
+      ];
+      for (const s of defaultStatuses) {
+        await client.query(
+          `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT DO NOTHING`,
+          [workspaceId, s.name, s.category, s.sortOrder, s.name === 'New'],
+        );
+      }
+
+      const defaultPriorities = [
+        { name: 'critical', sortOrder: 1 },
+        { name: 'high', sortOrder: 2 },
+        { name: 'normal', sortOrder: 3 },
+        { name: 'low', sortOrder: 4 },
+      ];
+      for (const p of defaultPriorities) {
+        await client.query(
+          `INSERT INTO priorities (workspace_id, name, sort_order, is_default)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT DO NOTHING`,
+          [workspaceId, p.name, p.sortOrder, p.name === 'normal'],
+        );
+      }
+
+      await client.query(
+        `INSERT INTO ticket_types (workspace_id, name, category, sort_order, is_default)
+         VALUES ($1, 'Incident', 'incident', 1, true),
+                ($1, 'Service Request', 'service-request', 2, false)
+         ON CONFLICT DO NOTHING`,
+        [workspaceId],
+      );
+
+      // 6. Create default business calendar
+      await client.query(
+        `INSERT INTO business_calendars (workspace_id, name, timezone, is_default, working_hours)
+         VALUES ($1, 'Default 9x5', $2, true, $3)
+         ON CONFLICT DO NOTHING`,
+        [
+          workspaceId,
+          input.timezone ?? 'UTC',
+          JSON.stringify([
+            { day: 'mon', startMinute: 480, endMinute: 1020 },
+            { day: 'tue', startMinute: 480, endMinute: 1020 },
+            { day: 'wed', startMinute: 480, endMinute: 1020 },
+            { day: 'thu', startMinute: 480, endMinute: 1020 },
+            { day: 'fri', startMinute: 480, endMinute: 1020 },
+          ]),
+        ],
+      );
+
+      // 7. Create session directly for immediate login
+      const sessionId = crypto.randomUUID();
+      await client.query(
+        `INSERT INTO sessions (id, user_id, workspace_id, data, expires_at)
+         VALUES ($1, $2, $3, '{}', NOW() + INTERVAL '30 days')`,
+        [sessionId, userId, workspaceId],
+      );
+
+      // 8. Audit
+      await audit.append({
+        kind: 'workspace-created',
+        actorUserId: userId,
+        workspaceId,
+        details: { name: input.workspaceName, email: input.adminEmail },
+      });
+
+      await client.query('COMMIT');
+
+      return { workspaceId, sessionId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 

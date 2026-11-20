@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { getIdentity, getWorkspace } from '../app.js';
 import type { Config } from '../config.js';
-import { sendMagicLinkEmail } from '../email/smtp.js';
+import type { AppModules } from './dependencies.js';
 
 /**
  * Determine whether the cookie Secure flag should be set.
@@ -32,7 +31,10 @@ export function cookieOptions(config: Config, maxAge = 60 * 60 * 24 * 30) {
 export async function registerAuthRoutes(
   fastify: FastifyInstance,
   config: Config,
+  modules: AppModules,
 ): Promise<void> {
+  const { identity, workspace: workspaceModule, sendMagicLinkEmail } = modules;
+
   // POST /api/auth/magic-link — issue a magic link
   fastify.post('/api/auth/magic-link', async (request, reply) => {
     const body = request.body as { email: string; workspaceId?: string };
@@ -40,12 +42,11 @@ export async function registerAuthRoutes(
       return reply.status(400).send({ error: 'email is required' });
     }
 
-    const identity = getIdentity();
     let workspaceId: string | undefined;
 
     // If workspaceId provided, validate it exists
     if (body.workspaceId) {
-      const ws = await getWorkspace().getWorkspace(body.workspaceId);
+      const ws = await workspaceModule.getWorkspace(body.workspaceId);
       if (!ws) {
         return reply.status(404).send({ error: 'Workspace not found' });
       }
@@ -96,8 +97,6 @@ export async function registerAuthRoutes(
   fastify.post('/api/auth/verify', async (request, reply) => {
     const body = request.body as { token?: string; provider?: string; subject?: string };
 
-    const identity = getIdentity();
-
     if (body.token) {
       const auth = await identity.verifyMagicLink(body.token);
       if (!auth) {
@@ -134,7 +133,6 @@ export async function registerAuthRoutes(
       return reply.send({ authenticated: false });
     }
 
-    const identity = getIdentity();
     const session = await identity.getSession(sessionId);
     if (!session) {
       reply.clearCookie('sessionId', { path: '/' });
@@ -151,7 +149,7 @@ export async function registerAuthRoutes(
     const memberships = await identity.getUserMemberships(session.userId);
     const workspaces = await Promise.all(
       memberships.map(async (membership) => {
-        const workspace = await getWorkspace().getWorkspace(membership.workspaceId);
+        const workspace = await workspaceModule.getWorkspace(membership.workspaceId);
         return workspace
           ? { id: workspace.id, name: workspace.name, role: membership.role }
           : null;
@@ -170,7 +168,6 @@ export async function registerAuthRoutes(
   fastify.post('/api/auth/logout', async (request, reply) => {
     const sessionId = request.cookies.sessionId;
     if (sessionId) {
-      const identity = getIdentity();
       await identity.deleteSession(sessionId);
     }
     reply.clearCookie('sessionId');

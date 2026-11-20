@@ -1,12 +1,11 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { getIdentity, getWorkflowConfiguration } from '../app.js';
+import type { AppModules, RouteIdentity } from './dependencies.js';
 import type { Config } from '../config.js';
 import {
   ConfigurationValidationError,
   ConfigurationConflictError,
   ConfigurationNotFoundError,
   CrossWorkspaceReferenceError,
-  type WorkflowConfigurationModule,
 } from '@ticketos/domain';
 import { z } from 'zod';
 
@@ -85,10 +84,10 @@ function mapError(error: unknown) {
  */
 async function requireConfigCapability(
   request: FastifyRequest,
+  identity: RouteIdentity,
 ): Promise<{ userId: string; workspaceId: string } | null> {
   const sessionId = request.cookies.sessionId;
   if (!sessionId) return null;
-  const identity = getIdentity();
   const session = await identity.getSession(sessionId);
   if (!session?.workspaceId) return null;
   const allowed = await identity.hasCapability(
@@ -99,6 +98,7 @@ async function requireConfigCapability(
 
 /** Generic route: auth → validate → invoke → map error → respond. */
 function authed(
+  identity: RouteIdentity,
   handler: (
     ctx: { userId: string; workspaceId: string },
     body: unknown,
@@ -107,7 +107,7 @@ function authed(
   ) => Promise<void>,
 ) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const ctx = await requireConfigCapability(request);
+    const ctx = await requireConfigCapability(request, identity);
     if (!ctx) return reply.status(403).send({ code: 'forbidden', message: 'Config management access required' });
     try {
       await handler(ctx, request.body, request.params as Record<string, string>, reply);
@@ -125,133 +125,129 @@ function authed(
 
 // ── Route registration ────────────────────────────────────────────────────
 
-/** Resolve the composed configuration module per request: module-scope
- * initialization would run before initApp() and break the import graph. */
-function workflow(): WorkflowConfigurationModule {
-  return getWorkflowConfiguration();
-}
-
 /** Workspace configuration routes: Statuses, Priorities, Ticket Types, Transitions. */
 export async function registerAdminConfigRoutes(
   fastify: FastifyInstance,
   _config: Config,
+  modules: AppModules,
 ): Promise<void> {
+  const { identity, workflowConfiguration: workflow } = modules;
   // ── Statuses ────────────────────────────────────────────────────────────
 
-  fastify.get('/api/admin/statuses', authed(async (ctx, _body, _params, reply) => {
-    const statuses = await workflow().listStatuses(ctx.workspaceId);
+  fastify.get('/api/admin/statuses', authed(identity, async (ctx, _body, _params, reply) => {
+    const statuses = await workflow.listStatuses(ctx.workspaceId);
     return reply.send(statuses);
   }));
 
-  fastify.post('/api/admin/statuses', authed(async (ctx, body, _params, reply) => {
+  fastify.post('/api/admin/statuses', authed(identity, async (ctx, body, _params, reply) => {
     const input = createStatusSchema.parse(body);
-    const s = await workflow().createStatus(ctx.workspaceId, ctx.userId, input);
+    const s = await workflow.createStatus(ctx.workspaceId, ctx.userId, input);
     return reply.status(201).send({ id: s.id });
   }));
 
-  fastify.patch('/api/admin/statuses/:id', authed(async (ctx, body, params, reply) => {
+  fastify.patch('/api/admin/statuses/:id', authed(identity, async (ctx, body, params, reply) => {
     const input = updateStatusSchema.parse(body);
-    const s = await workflow().updateStatus(ctx.workspaceId, ctx.userId, params.id as string, input);
+    const s = await workflow.updateStatus(ctx.workspaceId, ctx.userId, params.id as string, input);
     return reply.send({ id: s.id });
   }));
 
-  fastify.put('/api/admin/statuses/order', authed(async (ctx, body, _params, reply) => {
+  fastify.put('/api/admin/statuses/order', authed(identity, async (ctx, body, _params, reply) => {
     const ids = orderedIdsSchema.parse(body);
-    await workflow().reorderStatuses(ctx.workspaceId, ctx.userId, ids);
+    await workflow.reorderStatuses(ctx.workspaceId, ctx.userId, ids);
     return reply.send({ ok: true });
   }));
 
-  fastify.post('/api/admin/statuses/:id/active', authed(async (ctx, body, params, reply) => {
+  fastify.post('/api/admin/statuses/:id/active', authed(identity, async (ctx, body, params, reply) => {
     const { isActive } = z.object({ isActive: z.boolean() }).parse(body);
-    const s = await workflow().setStatusActive(ctx.workspaceId, ctx.userId, params.id as string, isActive);
+    const s = await workflow.setStatusActive(ctx.workspaceId, ctx.userId, params.id as string, isActive);
     return reply.send({ id: s.id, isActive: s.isActive });
   }));
 
   // ── Priorities ──────────────────────────────────────────────────────────
 
-  fastify.get('/api/admin/priorities', authed(async (ctx, _body, _params, reply) => {
-    return reply.send(await workflow().listPriorities(ctx.workspaceId));
+  fastify.get('/api/admin/priorities', authed(identity, async (ctx, _body, _params, reply) => {
+    return reply.send(await workflow.listPriorities(ctx.workspaceId));
   }));
 
-  fastify.post('/api/admin/priorities', authed(async (ctx, body, _params, reply) => {
+  fastify.post('/api/admin/priorities', authed(identity, async (ctx, body, _params, reply) => {
     const input = createPrioritySchema.parse(body);
-    const p = await workflow().createPriority(ctx.workspaceId, ctx.userId, input);
+    const p = await workflow.createPriority(ctx.workspaceId, ctx.userId, input);
     return reply.status(201).send({ id: p.id });
   }));
 
-  fastify.patch('/api/admin/priorities/:id', authed(async (ctx, body, params, reply) => {
+  fastify.patch('/api/admin/priorities/:id', authed(identity, async (ctx, body, params, reply) => {
     const input = updatePrioritySchema.parse(body);
-    const p = await workflow().updatePriority(ctx.workspaceId, ctx.userId, params.id as string, input);
+    const p = await workflow.updatePriority(ctx.workspaceId, ctx.userId, params.id as string, input);
     return reply.send({ id: p.id });
   }));
 
-  fastify.put('/api/admin/priorities/order', authed(async (ctx, body, _params, reply) => {
+  fastify.put('/api/admin/priorities/order', authed(identity, async (ctx, body, _params, reply) => {
     const ids = orderedIdsSchema.parse(body);
-    await workflow().reorderPriorities(ctx.workspaceId, ctx.userId, ids);
+    await workflow.reorderPriorities(ctx.workspaceId, ctx.userId, ids);
     return reply.send({ ok: true });
   }));
 
-  fastify.post('/api/admin/priorities/:id/active', authed(async (ctx, body, params, reply) => {
+  fastify.post('/api/admin/priorities/:id/active', authed(identity, async (ctx, body, params, reply) => {
     const { isActive } = z.object({ isActive: z.boolean() }).parse(body);
-    const p = await workflow().setPriorityActive(ctx.workspaceId, ctx.userId, params.id as string, isActive);
+    const p = await workflow.setPriorityActive(ctx.workspaceId, ctx.userId, params.id as string, isActive);
     return reply.send({ id: p.id, isActive: p.isActive });
   }));
 
-  fastify.post('/api/admin/priorities/:id/default', authed(async (ctx, _body, params, reply) => {
-    const p = await workflow().setDefaultPriority(ctx.workspaceId, ctx.userId, params.id as string);
+  fastify.post('/api/admin/priorities/:id/default', authed(identity, async (ctx, _body, params, reply) => {
+    const p = await workflow.setDefaultPriority(ctx.workspaceId, ctx.userId, params.id as string);
     return reply.send({ id: p.id });
   }));
 
   // ── Ticket Types ────────────────────────────────────────────────────────
 
-  fastify.get('/api/admin/ticket-types', authed(async (ctx, _body, _params, reply) => {
-    return reply.send(await workflow().listTicketTypes(ctx.workspaceId));
+  fastify.get('/api/admin/ticket-types', authed(identity, async (ctx, _body, _params, reply) => {
+    return reply.send(await workflow.listTicketTypes(ctx.workspaceId));
   }));
 
-  fastify.post('/api/admin/ticket-types', authed(async (ctx, body, _params, reply) => {
+  fastify.post('/api/admin/ticket-types', authed(identity, async (ctx, body, _params, reply) => {
     const input = createTicketTypeSchema.parse(body);
-    const t = await workflow().createTicketType(ctx.workspaceId, ctx.userId, input);
+    const t = await workflow.createTicketType(ctx.workspaceId, ctx.userId, input);
     return reply.status(201).send({ id: t.id });
   }));
 
-  fastify.patch('/api/admin/ticket-types/:id', authed(async (ctx, body, params, reply) => {
+  fastify.patch('/api/admin/ticket-types/:id', authed(identity, async (ctx, body, params, reply) => {
     const input = updateTicketTypeSchema.parse(body);
-    const t = await workflow().updateTicketType(ctx.workspaceId, ctx.userId, params.id as string, input);
+    const t = await workflow.updateTicketType(ctx.workspaceId, ctx.userId, params.id as string, input);
     return reply.send({ id: t.id });
   }));
 
-  fastify.put('/api/admin/ticket-types/order', authed(async (ctx, body, _params, reply) => {
+  fastify.put('/api/admin/ticket-types/order', authed(identity, async (ctx, body, _params, reply) => {
     const ids = orderedIdsSchema.parse(body);
-    await workflow().reorderTicketTypes(ctx.workspaceId, ctx.userId, ids);
+    await workflow.reorderTicketTypes(ctx.workspaceId, ctx.userId, ids);
     return reply.send({ ok: true });
   }));
 
-  fastify.post('/api/admin/ticket-types/:id/active', authed(async (ctx, body, params, reply) => {
+  fastify.post('/api/admin/ticket-types/:id/active', authed(identity, async (ctx, body, params, reply) => {
     const { isActive } = z.object({ isActive: z.boolean() }).parse(body);
-    const t = await workflow().setTicketTypeActive(ctx.workspaceId, ctx.userId, params.id as string, isActive);
+    const t = await workflow.setTicketTypeActive(ctx.workspaceId, ctx.userId, params.id as string, isActive);
     return reply.send({ id: t.id, isActive: t.isActive });
   }));
 
-  fastify.post('/api/admin/ticket-types/:id/default', authed(async (ctx, _body, params, reply) => {
-    const t = await workflow().setDefaultTicketType(ctx.workspaceId, ctx.userId, params.id as string);
+  fastify.post('/api/admin/ticket-types/:id/default', authed(identity, async (ctx, _body, params, reply) => {
+    const t = await workflow.setDefaultTicketType(ctx.workspaceId, ctx.userId, params.id as string);
     return reply.send({ id: t?.id ?? null });
   }));
 
   // ── Transitions ─────────────────────────────────────────────────────────
 
-  fastify.get('/api/admin/transitions', authed(async (ctx, _body, _params, reply) => {
-    return reply.send(await workflow().listTransitions(ctx.workspaceId));
+  fastify.get('/api/admin/transitions', authed(identity, async (ctx, _body, _params, reply) => {
+    return reply.send(await workflow.listTransitions(ctx.workspaceId));
   }));
 
-  fastify.post('/api/admin/transitions', authed(async (ctx, body, _params, reply) => {
+  fastify.post('/api/admin/transitions', authed(identity, async (ctx, body, _params, reply) => {
     const { fromStatusId, toStatusId } = transitionSchema.parse(body);
-    const t = await workflow().addTransition(ctx.workspaceId, ctx.userId, fromStatusId, toStatusId);
+    const t = await workflow.addTransition(ctx.workspaceId, ctx.userId, fromStatusId, toStatusId);
     return reply.status(201).send({ id: t.id });
   }));
 
-  fastify.delete('/api/admin/transitions', authed(async (ctx, body, _params, reply) => {
+  fastify.delete('/api/admin/transitions', authed(identity, async (ctx, body, _params, reply) => {
     const { fromStatusId, toStatusId } = transitionSchema.parse(body);
-    await workflow().removeTransition(ctx.workspaceId, ctx.userId, fromStatusId, toStatusId);
+    await workflow.removeTransition(ctx.workspaceId, ctx.userId, fromStatusId, toStatusId);
     return reply.send({ ok: true });
   }));
 }

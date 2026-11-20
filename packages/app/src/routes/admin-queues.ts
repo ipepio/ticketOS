@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { getIdentity, getWorkspace } from '../app.js';
+import type { AppModules, RouteIdentity } from './dependencies.js';
 import type { WorkspaceId, UserId } from '@ticketos/shared';
 import {
   ConfigurationConflictError,
@@ -32,14 +32,16 @@ const addMemberSchema = z.object({
 // Session helper
 // ---------------------------------------------------------------------------
 
-async function getSessionContext(request: FastifyRequest): Promise<{
+async function getSessionContext(
+  request: FastifyRequest,
+  identity: RouteIdentity,
+): Promise<{
   userId: UserId;
   workspaceId: WorkspaceId;
 } | null> {
   const sessionId = request.cookies.sessionId;
   if (!sessionId) return null;
 
-  const identity = getIdentity();
   const session = await identity.getSession(sessionId);
   if (!session?.workspaceId) return null;
 
@@ -52,11 +54,11 @@ async function getSessionContext(request: FastifyRequest): Promise<{
 
 async function checkCapability(
   reply: FastifyReply,
+  identity: RouteIdentity,
   userId: UserId,
   workspaceId: WorkspaceId,
   capability: string,
 ): Promise<boolean> {
-  const identity = getIdentity();
   const has = await identity.hasCapability(
     userId,
     workspaceId,
@@ -93,20 +95,21 @@ function translateError(error: unknown): { status: number; body: { code: string;
 export async function registerAdminQueueRoutes(
   fastify: FastifyInstance,
   _config: unknown,
+  modules: AppModules,
 ): Promise<void> {
+  const { identity, workspace } = modules;
   // GET /api/admin/queues — list queues (queues:manage)
   fastify.get('/api/admin/queues', async (request, reply) => {
-    const context = await getSessionContext(request);
+    const context = await getSessionContext(request, identity);
     if (!context) {
       return reply.status(403).send({ code: 'forbidden', message: 'Access denied' });
     }
 
-    const ok = await checkCapability(reply, context.userId, context.workspaceId, 'queues:manage');
+    const ok = await checkCapability(reply, identity, context.userId, context.workspaceId, 'queues:manage');
     if (!ok) return;
 
     try {
-      const workspaceModule = getWorkspace();
-      const queues = await workspaceModule.listQueues(context.workspaceId);
+      const queues = await workspace.listQueues(context.workspaceId);
       return reply.send(queues);
     } catch (error) {
       const { status, body } = translateError(error);
@@ -116,12 +119,12 @@ export async function registerAdminQueueRoutes(
 
   // POST /api/admin/queues — create queue (queues:manage)
   fastify.post('/api/admin/queues', async (request, reply) => {
-    const context = await getSessionContext(request);
+    const context = await getSessionContext(request, identity);
     if (!context) {
       return reply.status(403).send({ code: 'forbidden', message: 'Access denied' });
     }
 
-    const ok = await checkCapability(reply, context.userId, context.workspaceId, 'queues:manage');
+    const ok = await checkCapability(reply, identity, context.userId, context.workspaceId, 'queues:manage');
     if (!ok) return;
 
     const parsed = createQueueSchema.safeParse(request.body);
@@ -133,8 +136,7 @@ export async function registerAdminQueueRoutes(
     }
 
     try {
-      const workspaceModule = getWorkspace();
-      const queue = await workspaceModule.createQueue(context.workspaceId, context.userId, {
+      const queue = await workspace.createQueue(context.workspaceId, context.userId, {
         name: parsed.data.name,
         accessMode: parsed.data.accessMode,
       });
@@ -153,7 +155,7 @@ export async function registerAdminQueueRoutes(
 
   // PATCH /api/admin/queues/:id — update queue
   fastify.patch('/api/admin/queues/:id', async (request, reply) => {
-    const context = await getSessionContext(request);
+    const context = await getSessionContext(request, identity);
     if (!context) {
       return reply.status(403).send({ code: 'forbidden', message: 'Access denied' });
     }
@@ -171,16 +173,15 @@ export async function registerAdminQueueRoutes(
     // a body-conditional check let an unprivileged caller read queue metadata.
     const hasAccessModeChange = parsed.data.accessMode !== undefined;
 
-    const canManage = await checkCapability(reply, context.userId, context.workspaceId, 'queues:manage');
+    const canManage = await checkCapability(reply, identity, context.userId, context.workspaceId, 'queues:manage');
     if (!canManage) return;
     if (hasAccessModeChange) {
-      const canRestrict = await checkCapability(reply, context.userId, context.workspaceId, 'queues:restrict');
+      const canRestrict = await checkCapability(reply, identity, context.userId, context.workspaceId, 'queues:restrict');
       if (!canRestrict) return;
     }
 
     try {
-      const workspaceModule = getWorkspace();
-      const queue = await workspaceModule.updateQueue(
+      const queue = await workspace.updateQueue(
         context.workspaceId,
         context.userId,
         queueId,
@@ -203,19 +204,18 @@ export async function registerAdminQueueRoutes(
 
   // GET /api/admin/queues/:id/members — list members (queues:manage)
   fastify.get('/api/admin/queues/:id/members', async (request, reply) => {
-    const context = await getSessionContext(request);
+    const context = await getSessionContext(request, identity);
     if (!context) {
       return reply.status(403).send({ code: 'forbidden', message: 'Access denied' });
     }
 
-    const ok = await checkCapability(reply, context.userId, context.workspaceId, 'queues:manage');
+    const ok = await checkCapability(reply, identity, context.userId, context.workspaceId, 'queues:manage');
     if (!ok) return;
 
     const { id: queueId } = request.params as { id: string };
 
     try {
-      const workspaceModule = getWorkspace();
-      const members = await workspaceModule.getQueueMembers(context.workspaceId, queueId);
+      const members = await workspace.getQueueMembers(context.workspaceId, queueId);
       return reply.send(
         members.map((m) => ({
           userId: m.userId,
@@ -231,12 +231,12 @@ export async function registerAdminQueueRoutes(
 
   // POST /api/admin/queues/:id/members — add member (queues:manage, idempotent)
   fastify.post('/api/admin/queues/:id/members', async (request, reply) => {
-    const context = await getSessionContext(request);
+    const context = await getSessionContext(request, identity);
     if (!context) {
       return reply.status(403).send({ code: 'forbidden', message: 'Access denied' });
     }
 
-    const ok = await checkCapability(reply, context.userId, context.workspaceId, 'queues:manage');
+    const ok = await checkCapability(reply, identity, context.userId, context.workspaceId, 'queues:manage');
     if (!ok) return;
 
     const { id: queueId } = request.params as { id: string };
@@ -249,15 +249,14 @@ export async function registerAdminQueueRoutes(
     }
 
     try {
-      const workspaceModule = getWorkspace();
-      await workspaceModule.addQueueMember(
+      await workspace.addQueueMember(
         context.workspaceId,
         context.userId,
         queueId,
         parsed.data.userId,
       );
       // Idempotent: return current member list regardless of whether the insert was a no-op
-      const members = await workspaceModule.getQueueMembers(context.workspaceId, queueId);
+      const members = await workspace.getQueueMembers(context.workspaceId, queueId);
       return reply.send(
         members.map((m) => ({
           userId: m.userId,
@@ -273,26 +272,25 @@ export async function registerAdminQueueRoutes(
 
   // DELETE /api/admin/queues/:id/members/:userId — remove member (queues:manage, idempotent)
   fastify.delete('/api/admin/queues/:id/members/:userId', async (request, reply) => {
-    const context = await getSessionContext(request);
+    const context = await getSessionContext(request, identity);
     if (!context) {
       return reply.status(403).send({ code: 'forbidden', message: 'Access denied' });
     }
 
-    const ok = await checkCapability(reply, context.userId, context.workspaceId, 'queues:manage');
+    const ok = await checkCapability(reply, identity, context.userId, context.workspaceId, 'queues:manage');
     if (!ok) return;
 
     const { id: queueId, userId } = request.params as { id: string; userId: string };
 
     try {
-      const workspaceModule = getWorkspace();
-      await workspaceModule.removeQueueMember(
+      await workspace.removeQueueMember(
         context.workspaceId,
         context.userId,
         queueId,
         userId,
       );
       // Idempotent: return current member list regardless of whether the delete was a no-op
-      const members = await workspaceModule.getQueueMembers(context.workspaceId, queueId);
+      const members = await workspace.getQueueMembers(context.workspaceId, queueId);
       return reply.send(
         members.map((m) => ({
           userId: m.userId,

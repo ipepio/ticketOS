@@ -9,6 +9,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
+    "check:arch": "pnpm --filter @ticketos/app exec tsx ../../scripts/check-architecture.ts",
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @ticketos/tests test",
     "db:migrate": "pnpm --filter @ticketos/app db:migrate",

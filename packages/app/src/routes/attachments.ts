@@ -3,14 +3,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import multipart from '@fastify/multipart';
 import { z } from 'zod';
 import type { Ticket } from '@ticketos/domain';
-import { getIdentity, getStorage, getTicket } from '../app.js';
-import { getPool } from '../db/connection.js';
-import { PostgresAudit } from '../db/audit.js';
-import {
-  PostgresAttachment,
-  type AttachmentVisibility,
-  type AttachmentWithVisibility,
-} from '../storage/postgres.js';
+import type {
+  AppModules,
+  AttachmentVisibility,
+  AttachmentWithVisibility,
+  RouteIdentity,
+} from './dependencies.js';
 
 /**
  * Attachment routes — F8/S1 in docs/specs/operational-portal-completion.md.
@@ -90,6 +88,7 @@ interface RequestContext {
 async function requireSession(
   request: FastifyRequest,
   reply: FastifyReply,
+  identity: RouteIdentity,
 ): Promise<RequestContext | null> {
   const sessionId = request.cookies.sessionId;
   if (!sessionId) {
@@ -97,7 +96,6 @@ async function requireSession(
     return null;
   }
 
-  const identity = getIdentity();
   const session = await identity.getSession(sessionId);
   if (!session) {
     await reply.status(401).send({ error: 'Session expired' });
@@ -121,13 +119,14 @@ async function requireTicket(
   ticketId: string,
   context: RequestContext,
   reply: FastifyReply,
+  ticketModule: AppModules['ticket'],
 ): Promise<Ticket | null> {
   if (!z.string().uuid().safeParse(ticketId).success) {
     await reply.status(400).send({ error: 'Invalid Ticket id format' });
     return null;
   }
 
-  const ticket = await getTicket().getTicket(context.workspaceId, ticketId);
+  const ticket = await ticketModule.getTicket(context.workspaceId, ticketId);
   if (!ticket) {
     await reply.status(404).send({ error: 'Ticket not found' });
     return null;
@@ -174,7 +173,10 @@ function isMissingObjectError(error: unknown): boolean {
 export async function registerAttachmentRoutes(
   fastify: FastifyInstance,
   _config: unknown,
+  modules: AppModules,
 ): Promise<void> {
+  const { identity, ticket: ticketModule, storageMetadata, storageAdapter } = modules;
+
   // The limit is enforced while the body is read, so an oversize upload never
   // reaches the storage adapter. `throwFileSizeLimit: false` lets the handler
   // answer with a stable 413 payload instead of the plugin's default error.
@@ -183,20 +185,17 @@ export async function registerAttachmentRoutes(
     throwFileSizeLimit: false,
   });
 
-  const repository = (): PostgresAttachment => new PostgresAttachment(getPool());
-
   // -------------------------------------------------------------------------
   // POST /api/tickets/:id/attachments — upload (S1)
   // -------------------------------------------------------------------------
   fastify.post('/api/tickets/:id/attachments', async (request, reply) => {
-    const context = await requireSession(request, reply);
+    const context = await requireSession(request, reply, identity);
     if (!context) return;
 
     const ticketId = (request.params as { id: string }).id;
-    const ticket = await requireTicket(ticketId, context, reply);
+    const ticket = await requireTicket(ticketId, context, reply, ticketModule);
     if (!ticket) return;
 
-    const identity = getIdentity();
     if (
       !(await identity.hasCapability(context.userId, ticket.workspaceId, 'tickets:attach'))
     ) {
@@ -292,59 +291,34 @@ export async function registerAttachmentRoutes(
 
     const attachmentId = randomUUID();
     const storageKey = `attachments/${ticketId}/${attachmentId}`;
-    const storage = getStorage();
 
     // 1. Store the object. Nothing is written to the database until this
     //    succeeds, so a storage failure leaves no metadata behind.
-    await storage.adapter.store({ key: storageKey, data: buffer, mimeType });
+    await storageAdapter.store({ key: storageKey, data: buffer, mimeType });
 
     // 2. Metadata and audit commit together. If either fails, the object is
     //    removed before the request fails, so an upload can never leave an
     //    orphan object (S1: metadata and object lifecycle stay consistent).
     const created = await (async (): Promise<AttachmentWithVisibility> => {
-      const pool = getPool();
-      const client = await pool.connect();
       try {
-        await client.query('BEGIN');
-        const row = await repository().createStoredAttachment(
-          {
-            ticketId,
-            filename: safeFilename,
-            mimeType,
-            size: buffer.byteLength,
-            storageKey,
-            uploaderId: context.userId,
-            visibility,
-          },
-          client,
-        );
-        await new PostgresAudit(pool).appendViaClient(client, {
-          kind: 'attachment-uploaded',
-          actorUserId: context.userId,
+        return await storageMetadata.createStoredAttachmentWithAudit({
+          ticketId,
+          filename: safeFilename,
+          mimeType,
+          size: buffer.byteLength,
+          storageKey,
+          uploaderId: context.userId,
+          visibility,
           workspaceId: ticket.workspaceId,
-          details: {
-            ticketId,
-            attachmentId: row.id,
-            filename: safeFilename,
-            mimeType,
-            size: buffer.byteLength,
-            visibility,
-            storageKey,
-          },
         });
-        await client.query('COMMIT');
-        return row;
       } catch (error) {
-        await client.query('ROLLBACK').catch(() => undefined);
-        await storage.adapter.delete(storageKey).catch((cleanupError: unknown) => {
+        await storageAdapter.delete(storageKey).catch((cleanupError: unknown) => {
           request.log.error(
             { err: cleanupError, storageKey },
             'failed to remove an orphaned Attachment object after a metadata failure',
           );
         });
         throw error;
-      } finally {
-        client.release();
       }
     })();
 
@@ -355,14 +329,13 @@ export async function registerAttachmentRoutes(
   // GET /api/tickets/:id/attachments — list what this reader may see
   // -------------------------------------------------------------------------
   fastify.get('/api/tickets/:id/attachments', async (request, reply) => {
-    const context = await requireSession(request, reply);
+    const context = await requireSession(request, reply, identity);
     if (!context) return;
 
     const ticketId = (request.params as { id: string }).id;
-    const ticket = await requireTicket(ticketId, context, reply);
+    const ticket = await requireTicket(ticketId, context, reply, ticketModule);
     if (!ticket) return;
 
-    const identity = getIdentity();
     if (
       !(await identity.hasCapability(context.userId, ticket.workspaceId, 'tickets:read'))
     ) {
@@ -375,7 +348,7 @@ export async function registerAttachmentRoutes(
       'tickets:internal-note',
     );
 
-    const attachments = await repository().listVisibleAttachments(ticketId, {
+    const attachments = await storageMetadata.listVisibleAttachments(ticketId, {
       includeInternal: canSeeInternal,
     });
     return reply.send(attachments);
@@ -385,17 +358,16 @@ export async function registerAttachmentRoutes(
   // GET /api/tickets/:id/attachments/:attachmentId — authorized download (S1)
   // -------------------------------------------------------------------------
   fastify.get('/api/tickets/:id/attachments/:attachmentId', async (request, reply) => {
-    const context = await requireSession(request, reply);
+    const context = await requireSession(request, reply, identity);
     if (!context) return;
 
     const { id: ticketId, attachmentId } = request.params as {
       id: string;
       attachmentId: string;
     };
-    const ticket = await requireTicket(ticketId, context, reply);
+    const ticket = await requireTicket(ticketId, context, reply, ticketModule);
     if (!ticket) return;
 
-    const identity = getIdentity();
     if (
       !(await identity.hasCapability(context.userId, ticket.workspaceId, 'tickets:read'))
     ) {
@@ -406,7 +378,7 @@ export async function registerAttachmentRoutes(
       return reply.status(400).send({ error: 'Invalid Attachment id format' });
     }
 
-    const found = await repository().getAttachmentForDownload(attachmentId);
+    const found = await storageMetadata.getAttachmentForDownload(attachmentId);
     // The Attachment must belong to *this* Ticket: an id from another Ticket or
     // another Workspace is indistinguishable from a missing one.
     if (!found || found.attachment.ticketId !== ticketId) {
@@ -425,7 +397,7 @@ export async function registerAttachmentRoutes(
 
     let data: Buffer;
     try {
-      data = await getStorage().adapter.retrieve(found.storageKey);
+      data = await storageAdapter.retrieve(found.storageKey);
     } catch (error) {
       if (isMissingObjectError(error)) {
         return reply.status(404).send({
