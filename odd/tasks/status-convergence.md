@@ -34,7 +34,7 @@ constraints."
 | T1 | S1, S6 | worker: additive migration `status_id` + backfill from `status` per Workspace (high risk item 1 — dedicated verifier pass after) | 9162846 (verifier PASS) |
 | T2 | S2, S5 | worker: `createTicket`/`updateTicket`/transitions resolve `status_id` against the Workspace's statuses and validate transitions | a98d4ca (validation, not transitions) |
 | T3 | S1 | worker: read paths return the configured status; remove the enum writes (`'backlog'` literals in ticket + email intake) | a98d4ca |
-| T4 | S2, S3 | worker: portal/journeys observe configured statuses; e2e journey slice 10 ("A Workspace Admin can configure a Status and use it in an allowed transition") | — |
+| T4 | S2, S3 | worker: portal/journeys observe configured statuses; e2e journey slice 10 ("A Workspace Admin can configure a Status and use it in an allowed transition") | 2e42553 |
 
 ## Log
 
