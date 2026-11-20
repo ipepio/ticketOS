@@ -11,7 +11,7 @@ the orchestrator acting as judge and reviewer. Deployment/hardening stays out of
 | 1 | First-run onboarding | docs/specs/first-run-onboarding.md | feat/first-run-onboarding | odd/tasks/first-run-onboarding.md | done (559fc73) |
 | 2 | Ticket status model convergence (migration, high risk item 1) | docs/specs/operational-portal-completion.md (Known model mismatch; F4) | feat/status-convergence | odd/tasks/status-convergence.md | done (26d9b7d) |
 | 3 | Portal journeys: landing/intake, durable sessions, orgs/memberships, ticket form (F1, F2, F3, F7; slices 17–19) | docs/specs/operational-portal-completion.md | feat/portal-journeys | odd/tasks/portal-journeys.md | done (344ba30) |
-| 4 | Attachments: S3 adapter, selection policy, dev MinIO (F8, F9; slices 11–16) | docs/specs/operational-portal-completion.md | feat/attachments-storage | created when started | pending |
+| 4 | Attachments: S3 adapter, selection policy, dev SeaweedFS (F8, F9; slices 11–16) | docs/specs/operational-portal-completion.md | feat/attachments-storage | odd/tasks/attachments-storage.md | done (170943d) |
 | 5 | Architecture import checks (project-status finding F3; no new dependency) | docs/architecture/testing.md | feat/architecture-checks | created when started | pending |
 | 6 | docs/project-status.md maintenance (close resolved findings F1/F2/F4) | docs/project-status.md | rides with feature 5 | — | pending |
 
