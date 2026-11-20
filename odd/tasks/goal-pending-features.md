@@ -12,8 +12,8 @@ the orchestrator acting as judge and reviewer. Deployment/hardening stays out of
 | 2 | Ticket status model convergence (migration, high risk item 1) | docs/specs/operational-portal-completion.md (Known model mismatch; F4) | feat/status-convergence | odd/tasks/status-convergence.md | done (26d9b7d) |
 | 3 | Portal journeys: landing/intake, durable sessions, orgs/memberships, ticket form (F1, F2, F3, F7; slices 17–19) | docs/specs/operational-portal-completion.md | feat/portal-journeys | odd/tasks/portal-journeys.md | done (344ba30) |
 | 4 | Attachments: S3 adapter, selection policy, dev SeaweedFS (F8, F9; slices 11–16) | docs/specs/operational-portal-completion.md | feat/attachments-storage | odd/tasks/attachments-storage.md | done (170943d) |
-| 5 | Architecture import checks (project-status finding F3; no new dependency) | docs/architecture/testing.md | feat/architecture-checks | created when started | pending |
-| 6 | docs/project-status.md maintenance (close resolved findings F1/F2/F4) | docs/project-status.md | rides with feature 5 | — | pending |
+| 5 | Architecture import checks (project-status finding F3; no new dependency) | docs/architecture/testing.md | feat/attachments-storage (stacked) | odd/tasks/architecture-checks.md | done (99a5a4a) |
+| 6 | docs/project-status.md maintenance (close resolved findings F1/F2/F4) | docs/project-status.md | rides with feature 5 | — | done (99a5a4a) |
 
 Slices 1–10 of operational-portal-completion's TDD list are already done (ticket-creation.test.ts and
 the admin-configuration feature merged to master at cb2364a..3dc4447).

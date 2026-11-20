@@ -30,9 +30,23 @@ their evidence; the findings table must reflect the current truth.
 
 | ID | Spec | Route | Commit |
 | --- | --- | --- | --- |
-| T1 | S1, S2, S3 | worker: hand-rolled import checker script (resolved paths, cycles, negative fixtures) + package script + CI wiring | — |
-| T2 | S4 | parent inline: project-status findings closure | — |
+| T1 | S1, S2, S3 | worker: hand-rolled import checker script (resolved paths, cycles, negative fixtures) + package script + CI wiring | 434033f (checker + fix-now refactor) |
+| T2 | S4 | parent inline: project-status findings closure | 99a5a4a |
 
 ## Log
 
 L1 (verbatim): "organiza un goal para hacer todas las features pendientes, y orquestalo todo. El desarrollo que sea todo con deepseek-v4-flash o hy4-flash ambos de nan.builders, vale?"
+
+L2 (owner decisions, 2026-11-20): (1) dev S3 service is SeaweedFS, not MinIO (Docker Hub pull blocked;
+owner selected from local images) — recorded in odd/tasks/attachments-storage.md L3. (2) "Arreglarlo
+ahora": the checker's 14 real runtime violations were fixed in code, not baselined.
+
+L3 (T1 evidence): checker (scripts/check-architecture.ts, TS compiler API, zero deps) enforces every S1
+rule with resolved-path coverage; 15 negative fixtures prove each boundary fails; pg-location exempts
+explicit type-only imports (erased at runtime) — precision, not weakening. CI gained the
+architecture-checks job and triggers now include master. The fix-now refactor: app.ts injects an
+AppModules bundle into every route registration (7 cycles broken, getters removed), routes hold no pool
+(admin/setup SQL into workspace/postgres.ts, /ready into db/health.ts, attachments receive the storage
+module + adapter, auth receives the SMTP gateway). Final gates: check:arch 0 violations (75 files),
+Playwright 57/57, app 259/259, portal 13/13, typecheck 0, lint 0, build emits. T2: project-status
+findings F1-F4 closed with evidence (99a5a4a). FEATURE COMPLETE.
