@@ -92,6 +92,21 @@ const MIGRATIONS = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(workspace_id, name)
   )`,
+  // Workspace-configured Statuses (S1, S5) — the single source of truth for
+  // Ticket status, referenced by `tickets.status_id` (migration 027).
+  `CREATE TABLE IF NOT EXISTS status_categories (name TEXT PRIMARY KEY)`,
+  `INSERT INTO status_categories (name) VALUES ('new'), ('open'), ('pending'), ('resolved'), ('closed') ON CONFLICT DO NOTHING`,
+  `CREATE TABLE IF NOT EXISTS statuses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(workspace_id, name)
+  )`,
 ];
 
 let pool: Pool | null = null;
@@ -102,6 +117,9 @@ describe('Ticket and Timeline', () => {
   let wsId: string;
   let ticketTypeId: string;
   let priorityId: string;
+  let newStatusId: string;
+  let openStatusId: string;
+  let closedStatusId: string;
 
   beforeAll(async () => {
     pool = new Pool({
@@ -118,6 +136,7 @@ describe('Ticket and Timeline', () => {
     await pool!.query('DELETE FROM ticket_followers');
     await pool!.query('DELETE FROM ticket_tags');
     await pool!.query('DELETE FROM tickets');
+    await pool!.query('DELETE FROM statuses');
     await pool!.query('DELETE FROM ticket_types');
     await pool!.query('DELETE FROM priorities');
     await pool!.query('DELETE FROM workspace_memberships');
@@ -154,6 +173,27 @@ describe('Ticket and Timeline', () => {
     );
     priorityId = priorityRows[0]!.id;
 
+    const insertStatus = async (
+      name: string,
+      category: string,
+      sortOrder: number,
+      isDefault: boolean,
+      isActive = true,
+    ): Promise<string> => {
+      const { rows } = await pool!.query(
+        `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [wsId, name, category, sortOrder, isDefault, isActive],
+      );
+      return rows[0]!.id;
+    };
+
+    newStatusId = await insertStatus('New', 'new', 1, true);
+    openStatusId = await insertStatus('Open', 'open', 2, false);
+    await insertStatus('Pending', 'pending', 3, false);
+    await insertStatus('Resolved', 'resolved', 4, false);
+    closedStatusId = await insertStatus('Closed', 'closed', 5, false);
+
     ticket = new PostgresTicket(pool!);
   });
 
@@ -176,7 +216,9 @@ describe('Ticket and Timeline', () => {
       };
       const t = await ticket.createTicket(input);
       expect(t.title).toBe('Test ticket');
-      expect(t.status).toBe('backlog');
+      expect(t.statusId).toBe(newStatusId);
+      expect(t.statusName).toBe('New');
+      expect(t.statusCategory).toBe('new');
       expect(t.priority).toBe('normal');
       expect(t.visibility).toBe('public');
       expect(t.id).toBeDefined();
@@ -200,6 +242,70 @@ describe('Ticket and Timeline', () => {
       expect(t.description).toBe('Something is broken');
       expect(t.visibility).toBe('internal');
       expect(t.assignedTo).toBe(userId);
+    });
+
+    it('accepts an explicit Workspace Status', async () => {
+      const t = await ticket.createTicket({
+        workspaceId: wsId as any,
+        title: 'Explicit status',
+        statusId: openStatusId,
+        createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
+      });
+      expect(t.statusId).toBe(openStatusId);
+      expect(t.statusName).toBe('Open');
+      expect(t.statusCategory).toBe('open');
+    });
+
+    it('rejects an inactive Status', async () => {
+      const inactiveStatusId = await pool!.query(
+        `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default, is_active)
+         VALUES ($1, 'Retired', 'open', 9, false, false) RETURNING id`,
+        [wsId],
+      ).then((r) => r.rows[0]!.id);
+
+      await expect(ticket.createTicket({
+        workspaceId: wsId as any,
+        title: 'Inactive status',
+        statusId: inactiveStatusId,
+        createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
+      })).rejects.toThrow(/Status not found or inactive/);
+    });
+
+    it('rejects a Status from another Workspace', async () => {
+      const { rows: otherWs } = await pool!.query(
+        'INSERT INTO workspaces (name) VALUES ($1) RETURNING id',
+        ['Other Status Workspace'],
+      );
+      const { rows: foreignStatus } = await pool!.query(
+        `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+         VALUES ($1, 'New', 'new', 1, true) RETURNING id`,
+        [otherWs[0]!.id],
+      );
+
+      await expect(ticket.createTicket({
+        workspaceId: wsId as any,
+        title: 'Foreign status',
+        statusId: foreignStatus[0]!.id,
+        createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
+      })).rejects.toThrow(/Status not found or inactive/);
+    });
+
+    it('rejects creation when the Workspace has no Status configured', async () => {
+      await pool!.query('DELETE FROM statuses WHERE workspace_id = $1', [wsId]);
+
+      await expect(ticket.createTicket({
+        workspaceId: wsId as any,
+        title: 'No status workspace',
+        createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
+      })).rejects.toThrow(/No active Status is configured/);
     });
   });
 
@@ -235,12 +341,29 @@ describe('Ticket and Timeline', () => {
       const updated = await ticket.updateTicket({
         id: t.id,
         title: 'New title',
-        status: 'todo',
+        statusId: openStatusId,
         priority: 'high',
       });
       expect(updated.title).toBe('New title');
-      expect(updated.status).toBe('todo');
+      expect(updated.statusId).toBe(openStatusId);
+      expect(updated.statusName).toBe('Open');
+      expect(updated.statusCategory).toBe('open');
       expect(updated.priority).toBe('high');
+    });
+
+    it('rejects a Status that is not active in the Ticket Workspace', async () => {
+      const t = await ticket.createTicket({
+        workspaceId: wsId as any,
+        title: 'Reject status',
+        createdBy: userId as any,
+        ticketTypeId,
+        priorityId,
+      });
+
+      await expect(ticket.updateTicket({
+        id: t.id,
+        statusId: crypto.randomUUID(),
+      })).rejects.toThrow(/Status not found or inactive/);
     });
   });
 
@@ -269,11 +392,12 @@ describe('Ticket and Timeline', () => {
 
     it('filters by status', async () => {
       const t1 = await ticket.createTicket({ workspaceId: wsId as any, title: 'T1', createdBy: userId as any, ticketTypeId, priorityId });
-      await ticket.updateTicket({ id: t1.id, status: 'todo' });
+      await ticket.updateTicket({ id: t1.id, statusId: openStatusId });
       await ticket.createTicket({ workspaceId: wsId as any, title: 'T2', createdBy: userId as any, ticketTypeId, priorityId });
-      const list = await ticket.listTickets(wsId as any, { status: 'todo' });
+      const list = await ticket.listTickets(wsId as any, { statusId: openStatusId });
       expect(list).toHaveLength(1);
       expect(list[0]!.title).toBe('T1');
+      expect(list[0]!.statusId).toBe(openStatusId);
     });
 
     it('filters by priority', async () => {
@@ -431,7 +555,20 @@ describe('Ticket and Timeline', () => {
     it('cancels a ticket when requested by the creator', async () => {
       const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'Cancel me', createdBy: userId as any, ticketTypeId, priorityId });
       const cancelled = await ticket.cancelTicket(wsId as any, t.id, userId as any);
-      expect(cancelled.status).toBe('cancelled');
+      expect(cancelled.statusId).toBe(closedStatusId);
+      expect(cancelled.statusName).toBe('Closed');
+      expect(cancelled.statusCategory).toBe('closed');
+    });
+
+    it('rejects cancellation when the Workspace has no closed Status', async () => {
+      const t = await ticket.createTicket({ workspaceId: wsId as any, title: 'No closed status', createdBy: userId as any, ticketTypeId, priorityId });
+      await pool!.query(
+        "DELETE FROM statuses WHERE workspace_id = $1 AND category = 'closed'",
+        [wsId],
+      );
+      await expect(ticket.cancelTicket(wsId as any, t.id, userId as any)).rejects.toThrow(
+        /No active closed Status/,
+      );
     });
 
     it('rejects cancellation by non-creator', async () => {

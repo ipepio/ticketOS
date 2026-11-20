@@ -17,6 +17,10 @@ describe('Ticket creation contract', () => {
   let priorityId: string;
   let otherTicketTypeId: string;
   let otherPriorityId: string;
+  let otherWorkspaceStatusId: string;
+  let newStatusId: string;
+  let openStatusId: string;
+  let inactiveStatusId: string;
   let inactiveTicketTypeId: string;
   let inactivePriorityId: string;
 
@@ -103,6 +107,27 @@ describe('Ticket creation contract', () => {
     await pool.query(`
       ALTER TABLE priorities ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true
     `);
+    // Workspace-configured Statuses (S1, S5) — the Ticket status source of truth.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS status_categories (name TEXT PRIMARY KEY)
+    `);
+    await pool.query(`
+      INSERT INTO status_categories (name) VALUES ('new'), ('open'), ('pending'), ('resolved'), ('closed')
+      ON CONFLICT DO NOTHING
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS statuses (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        is_default BOOLEAN NOT NULL DEFAULT false,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(workspace_id, name)
+      )
+    `);
   });
 
   beforeEach(async () => {
@@ -176,6 +201,33 @@ describe('Ticket creation contract', () => {
     );
     inactivePriorityId = ipr[0]!.id;
 
+    // Statuses: the default (category new), one open Status, one inactive
+    // Status and one Status owned by the other Workspace.
+    const { rows: ns } = await pool.query(
+      `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+       VALUES ($1, 'New', 'new', 1, true) RETURNING id`,
+      [workspaceId],
+    );
+    newStatusId = ns[0]!.id;
+    const { rows: os } = await pool.query(
+      `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+       VALUES ($1, 'Open', 'open', 2, false) RETURNING id`,
+      [workspaceId],
+    );
+    openStatusId = os[0]!.id;
+    const { rows: is } = await pool.query(
+      `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default, is_active)
+       VALUES ($1, 'Retired', 'open', 9, false, false) RETURNING id`,
+      [workspaceId],
+    );
+    inactiveStatusId = is[0]!.id;
+    const { rows: ows2 } = await pool.query(
+      `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+       VALUES ($1, 'New', 'new', 1, true) RETURNING id`,
+      [otherWorkspaceId],
+    );
+    otherWorkspaceStatusId = ows2[0]!.id;
+
     ticket = new PostgresTicket(pool);
   });
 
@@ -225,6 +277,51 @@ describe('Ticket creation contract', () => {
     expect(retrieved!.description).toBe('With type and priority');
     expect(retrieved!.ticketTypeId).toBe(ticketTypeId);
     expect(retrieved!.priorityId).toBe(priorityId);
+    // S1/S2: the created Ticket carries the Workspace's configured Status.
+    expect(retrieved!.statusId).toBe(newStatusId);
+    expect(retrieved!.statusName).toBe('New');
+    expect(retrieved!.statusCategory).toBe('new');
+  });
+
+  it('creates a Ticket in an explicitly selected active same-Workspace Status', async () => {
+    const created = await ticket.createTicket({
+      workspaceId,
+      title: 'Selected status',
+      ticketTypeId,
+      priorityId,
+      statusId: openStatusId,
+      createdBy: userId,
+    });
+
+    expect(created.statusId).toBe(openStatusId);
+    expect(created.statusName).toBe('Open');
+    expect(created.statusCategory).toBe('open');
+  });
+
+  it('rejects an inactive Status', async () => {
+    await expect(
+      ticket.createTicket({
+        workspaceId,
+        title: 'Inactive status',
+        ticketTypeId,
+        priorityId,
+        statusId: inactiveStatusId,
+        createdBy: userId,
+      }),
+    ).rejects.toThrow(/Status not found or inactive/);
+  });
+
+  it('rejects a cross-Workspace Status', async () => {
+    await expect(
+      ticket.createTicket({
+        workspaceId,
+        title: 'Foreign status',
+        ticketTypeId,
+        priorityId,
+        statusId: otherWorkspaceStatusId,
+        createdBy: userId,
+      }),
+    ).rejects.toThrow(/Status not found or inactive/);
   });
 
   it('rejects a cross-Workspace Ticket Type', async () => {

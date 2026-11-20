@@ -10,10 +10,104 @@ import type {
   TimelineEntryKind,
   TicketVisibility,
   TicketPriority,
-  TicketStatus,
+  StatusCategory,
 } from '@ticketos/domain';
 import type { UserId } from '@ticketos/shared';
 import { ConfigurationNotFoundError } from '@ticketos/domain';
+
+/**
+ * A Status resolved from the Workspace's own configuration.
+ *
+ * S1/S2: the Ticket status model has exactly one source of truth — the
+ * Workspace-configured `statuses` rows — so every write and read here works
+ * with a Status id plus the resolved name/category of that row.
+ */
+export interface ResolvedTicketStatus {
+  id: string;
+  name: string;
+  category: StatusCategory;
+}
+
+/**
+ * Ticket read model columns. Every status read goes through the Workspace
+ * configuration (`status_id` JOIN `statuses`), never through the legacy
+ * `tickets.status` TEXT column (S1, S5).
+ */
+function mapStatusRow(row: { id: string; name: string; category: string }): ResolvedTicketStatus {
+  return { id: row.id, name: row.name, category: row.category as StatusCategory };
+}
+
+/**
+ * Resolve the Status a new Ticket starts in: the Workspace's default Status,
+ * else the first active one by sort_order. Shared with email intake so the two
+ * creation paths cannot drift apart (S1).
+ */
+export async function resolveDefaultStatus(
+  pool: Pool,
+  workspaceId: string,
+): Promise<ResolvedTicketStatus> {
+  const { rows } = await pool.query(
+    `SELECT id, name, category FROM statuses
+     WHERE workspace_id = $1 AND is_active = true
+     ORDER BY is_default DESC, sort_order, id
+     LIMIT 1`,
+    [workspaceId],
+  );
+  const row = rows[0];
+  if (!row) {
+    throw new ConfigurationNotFoundError(
+      'No active Status is configured in this Workspace; configure a Status before creating a Ticket',
+    );
+  }
+  return mapStatusRow(row);
+}
+
+/**
+ * Resolve the Status a cancelled Ticket moves to: the Workspace's active
+ * `closed` category Status, default first, then sort_order.
+ */
+export async function resolveClosedStatus(
+  pool: Pool,
+  workspaceId: string,
+): Promise<ResolvedTicketStatus> {
+  const { rows } = await pool.query(
+    `SELECT id, name, category FROM statuses
+     WHERE workspace_id = $1 AND is_active = true AND category = 'closed'
+     ORDER BY is_default DESC, sort_order, id
+     LIMIT 1`,
+    [workspaceId],
+  );
+  const row = rows[0];
+  if (!row) {
+    throw new ConfigurationNotFoundError(
+      'No active closed Status is configured in this Workspace; configure a closed Status before cancelling a Ticket',
+    );
+  }
+  return mapStatusRow(row);
+}
+
+/**
+ * Validate an explicitly requested Status: it must exist, be active, and
+ * belong to the Ticket's Workspace.
+ */
+async function resolveRequestedStatus(
+  pool: Pool,
+  workspaceId: string,
+  statusId: string,
+): Promise<ResolvedTicketStatus> {
+  const { rows } = await pool.query(
+    `SELECT id, name, category FROM statuses
+     WHERE id = $1 AND workspace_id = $2 AND is_active = true`,
+    [statusId, workspaceId],
+  );
+  const row = rows[0];
+  if (!row) {
+    throw new ConfigurationNotFoundError(
+      'Status not found or inactive in this Workspace',
+    );
+  }
+  return mapStatusRow(row);
+}
 
 export class PostgresTicket implements TicketModule {
   constructor(private pool: Pool) {}
@@ -49,6 +143,14 @@ export class PostgresTicket implements TicketModule {
         'Priority not found or inactive in this Workspace',
       );
     }
+    // S1/S2: the Status is Workspace configuration, not a hard-coded enum
+    // value. An explicit statusId is validated against the Workspace; without
+    // one the Workspace default (else first by sort_order) is used. A
+    // Workspace with no active Status cannot create Tickets.
+    const status = input.statusId
+      ? await resolveRequestedStatus(this.pool, input.workspaceId, input.statusId)
+      : await resolveDefaultStatus(this.pool, input.workspaceId);
+
     // ADR 0010: exactly one active Queue per Ticket. Resolve the target Queue
     // explicitly so a Ticket never lands unrouted with queue_id NULL, which
     // makes it invisible to every Queue view.
@@ -69,15 +171,21 @@ export class PostgresTicket implements TicketModule {
       queueId = qRows[0]?.id ?? null;
     }
 
-    const { rows } = await this.pool.query(
-      `INSERT INTO tickets (workspace_id, title, description, status, priority, ticket_type_id, priority_id, queue_id, created_by, assigned_to, visibility, created_at, updated_at)
+    // NOTE (S1): `tickets.status` is the pre-convergence TEXT column. It is
+    // deliberately NOT written here: it is constrained by migration 004 to the
+    // retired enum values, so writing the configured Status name would either
+    // fail the CHECK or introduce a second source of truth. `status_id` is
+    // authoritative and the legacy column is left at its DEFAULT until a later
+    // additive migration removes it.
+    const { rows } = await this.pool.query<{ id: string }>(
+      `INSERT INTO tickets (workspace_id, title, description, status_id, priority, ticket_type_id, priority_id, queue_id, created_by, assigned_to, visibility, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
-       RETURNING id, workspace_id, title, description, status, priority, ticket_type_id, priority_id, queue_id, created_by, assigned_to, visibility, created_at, updated_at`,
+       RETURNING id`,
       [
         input.workspaceId,
         input.title,
         input.description ?? null,
-        'backlog',
+        status.id,
         input.priority ?? 'normal',
         input.ticketTypeId,
         input.priorityId,
@@ -86,13 +194,26 @@ export class PostgresTicket implements TicketModule {
         input.assignedTo ?? null,
         input.visibility ?? 'public',
       ],
-    );    return this.mapTicket(rows[0]!);
+    );
+
+    const created = await this.getTicket(input.workspaceId, rows[0]!.id);
+    if (!created) {
+      throw new Error('Ticket was not readable after creation');
+    }
+    return created;
   }
 
   async getTicket(workspaceId: string, id: string): Promise<Ticket | null> {
+    // The Status is resolved from configuration, so a Ticket always carries
+    // the configured name and canonical category (S1, S5).
     const { rows } = await this.pool.query(
-      `SELECT id, workspace_id, title, description, status, priority, ticket_type_id, priority_id, created_by, assigned_to, visibility, created_at, updated_at
-       FROM tickets WHERE workspace_id = $1 AND id = $2`,
+      `SELECT t.id, t.workspace_id, t.title, t.description,
+              t.status_id, s.name AS status_name, s.category AS status_category,
+              t.priority, t.ticket_type_id, t.priority_id, t.created_by,
+              t.assigned_to, t.visibility, t.created_at, t.updated_at
+         FROM tickets t
+         JOIN statuses s ON s.id = t.status_id
+        WHERE t.workspace_id = $1 AND t.id = $2`,
       [workspaceId, id],
     );
     return rows.length === 0 ? null : this.mapTicket(rows[0]!);
@@ -105,7 +226,21 @@ export class PostgresTicket implements TicketModule {
 
     if (input.title !== undefined) { sets.push(`title = $${idx++}`); values.push(input.title); }
     if (input.description !== undefined) { sets.push(`description = $${idx++}`); values.push(input.description); }
-    if (input.status !== undefined) { sets.push(`status = $${idx++}`); values.push(input.status); }
+    // S2: a status change goes through the Workspace-configured Status id. The
+    // Status must exist, be active, and belong to the Ticket's own Workspace.
+    if (input.statusId !== undefined) {
+      const { rows: currentRows } = await this.pool.query<{ workspace_id: string }>(
+        'SELECT workspace_id FROM tickets WHERE id = $1',
+        [input.id],
+      );
+      const ticketWorkspaceId = currentRows[0]?.workspace_id;
+      if (!ticketWorkspaceId) {
+        throw new Error(`Ticket not found: ${input.id}`);
+      }
+      const status = await resolveRequestedStatus(this.pool, ticketWorkspaceId, input.statusId);
+      sets.push(`status_id = $${idx++}`);
+      values.push(status.id);
+    }
     if (input.priority !== undefined) { sets.push(`priority = $${idx++}`); values.push(input.priority); }
     if (input.priorityId !== undefined) { sets.push(`priority_id = $${idx++}`); values.push(input.priorityId); }
     if (input.ticketTypeId !== undefined) { sets.push(`ticket_type_id = $${idx++}`); values.push(input.ticketTypeId); }
@@ -115,12 +250,15 @@ export class PostgresTicket implements TicketModule {
     sets.push(`updated_at = NOW()`);
     values.push(input.id);
 
-    const { rows } = await this.pool.query(
-      `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx}
-       RETURNING id, workspace_id, title, description, status, priority, ticket_type_id, priority_id, created_by, assigned_to, visibility, created_at, updated_at`,
+    const { rows } = await this.pool.query<{ id: string }>(
+      `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id`,
       values,
     );
-    return this.mapTicket(rows[0]!);
+    const updated = await this.getTicketById(rows[0]!.id);
+    if (!updated) {
+      throw new Error(`Ticket not found: ${input.id}`);
+    }
+    return updated;
   }
 
   async deleteTicket(workspaceId: string, id: string): Promise<void> {
@@ -131,21 +269,26 @@ export class PostgresTicket implements TicketModule {
   }
 
   async listTickets(workspaceId: string, filters?: {
-    status?: TicketStatus;
+    statusId?: string;
     priority?: TicketPriority;
     assignedTo?: string | null;
     createdBy?: string;
     tags?: string[];
   }): Promise<Ticket[]> {
-    let sql = `SELECT id, workspace_id, title, description, status, priority, ticket_type_id, created_by, assigned_to, visibility, created_at, updated_at
-               FROM tickets WHERE workspace_id = $1`;
+    let sql = `SELECT t.id, t.workspace_id, t.title, t.description,
+                      t.status_id, s.name AS status_name, s.category AS status_category,
+                      t.priority, t.ticket_type_id, t.priority_id, t.created_by,
+                      t.assigned_to, t.visibility, t.created_at, t.updated_at
+                 FROM tickets t
+                 JOIN statuses s ON s.id = t.status_id
+                WHERE t.workspace_id = $1`;
     const values: unknown[] = [workspaceId];
     let idx = 2;
 
-    if (filters?.status) { sql += ` AND status = $${idx++}`; values.push(filters.status); }
-    if (filters?.priority) { sql += ` AND priority = $${idx++}`; values.push(filters.priority); }
-    if (filters?.assignedTo !== undefined) { sql += ` AND assigned_to = $${idx++}`; values.push(filters.assignedTo); }
-    if (filters?.createdBy) { sql += ` AND created_by = $${idx++}`; values.push(filters.createdBy); }
+    if (filters?.statusId) { sql += ` AND t.status_id = $${idx++}`; values.push(filters.statusId); }
+    if (filters?.priority) { sql += ` AND t.priority = $${idx++}`; values.push(filters.priority); }
+    if (filters?.assignedTo !== undefined) { sql += ` AND t.assigned_to = $${idx++}`; values.push(filters.assignedTo); }
+    if (filters?.createdBy) { sql += ` AND t.created_by = $${idx++}`; values.push(filters.createdBy); }
 
     const { rows } = await this.pool.query(sql, values);
     return rows.map((r) => this.mapTicket(r));
@@ -270,7 +413,8 @@ export class PostgresTicket implements TicketModule {
 
   /**
    * Cancel a ticket. Only the ticket creator can cancel their own ticket.
-   * Cancellation is terminal — the status becomes 'cancelled'.
+   * Cancellation is terminal: the Ticket moves to the Workspace's `closed`
+   * category Status (S5) instead of a hard-coded status string.
    */
   async cancelTicket(workspaceId: string, ticketId: string, userId: UserId): Promise<Ticket> {
     // Verify the ticket exists and the user is the creator
@@ -281,25 +425,44 @@ export class PostgresTicket implements TicketModule {
     if (existing.createdBy !== userId) {
       throw new Error('Only the ticket creator can cancel this ticket');
     }
-    if (existing.status === 'cancelled') {
+    if (existing.statusCategory === 'closed') {
       throw new Error('Ticket is already cancelled');
     }
 
-    // Set terminal cancelled status
-    const { rows } = await this.pool.query(
+    // Terminal Status comes from the Workspace configuration, not an enum.
+    const closedStatus = await resolveClosedStatus(this.pool, workspaceId);
+
+    const { rows } = await this.pool.query<{ id: string }>(
       `UPDATE tickets
-       SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = $1, updated_at = NOW()
-       WHERE id = $2
-       RETURNING id, workspace_id, title, description, status, priority, ticket_type_id,
-                 created_by, assigned_to, visibility, created_at, updated_at`,
-      [userId, ticketId],
+       SET status_id = $1, cancelled_at = NOW(), cancelled_by = $2, updated_at = NOW()
+       WHERE id = $3
+       RETURNING id`,
+      [closedStatus.id, userId, ticketId],
     );
-    return this.mapTicket(rows[0]!);
+    const cancelled = await this.getTicketById(rows[0]!.id);
+    if (!cancelled) {
+      throw new Error(`Ticket not found: ${ticketId}`);
+    }
+    return cancelled;
   }
 
   // ---------------------------------------------------------------------------
   // Mappers
   // ---------------------------------------------------------------------------
+
+  private async getTicketById(id: string): Promise<Ticket | null> {
+    const { rows } = await this.pool.query(
+      `SELECT t.id, t.workspace_id, t.title, t.description,
+              t.status_id, s.name AS status_name, s.category AS status_category,
+              t.priority, t.ticket_type_id, t.priority_id, t.created_by,
+              t.assigned_to, t.visibility, t.created_at, t.updated_at
+         FROM tickets t
+         JOIN statuses s ON s.id = t.status_id
+        WHERE t.id = $1`,
+      [id],
+    );
+    return rows.length === 0 ? null : this.mapTicket(rows[0]!);
+  }
 
   private mapTicket(row: any): Ticket {
     return {
@@ -307,7 +470,9 @@ export class PostgresTicket implements TicketModule {
       workspaceId: row.workspace_id,
       title: row.title,
       description: row.description,
-      status: row.status as TicketStatus,
+      statusId: row.status_id,
+      statusName: row.status_name,
+      statusCategory: row.status_category as StatusCategory,
       priority: row.priority as TicketPriority,
       ticketTypeId: row.ticket_type_id,
       priorityId: row.priority_id,

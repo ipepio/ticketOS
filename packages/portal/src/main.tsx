@@ -23,7 +23,9 @@ interface Ticket {
   id: string;
   title: string;
   description: string | null;
-  status: string;
+  statusId: string;
+  statusName: string;
+  statusCategory: string;
   priority: string;
   ticketTypeId: string | null;
   createdBy: string;
@@ -336,20 +338,26 @@ function LocaleSwitcher() {
 // Badge helpers
 // ---------------------------------------------------------------------------
 
-function StatusBadge({ status }: { status: string }) {
+// Canonical Status Categories (S5). The badge class comes from the category,
+// the label comes from the Workspace-configured Status name.
+const STATUS_CATEGORY_STYLES: Record<string, { class: string; dot: string }> = {
+  new: { class: 'badge-neutral', dot: 'var(--neutral)' },
+  open: { class: 'badge-info', dot: 'var(--info)' },
+  pending: { class: 'badge-warn', dot: 'var(--warn)' },
+  resolved: { class: 'badge-success', dot: 'var(--success)' },
+  closed: { class: 'badge-danger', dot: 'var(--danger)' },
+};
+
+function StatusBadge({ name, category }: { name: string; category: string }) {
   const { t } = useI18n();
-  const statusMap: Record<string, { class: string; dot: string }> = {
-    backlog: { class: 'badge-neutral', dot: 'var(--neutral)' },
-    todo: { class: 'badge-info', dot: 'var(--info)' },
-    in_progress: { class: 'badge-warn', dot: 'var(--warn)' },
-    done: { class: 'badge-success', dot: 'var(--success)' },
-    cancelled: { class: 'badge-danger', dot: 'var(--danger)' },
-  };
-  const s = statusMap[status] ?? { class: 'badge-neutral', dot: 'var(--neutral)' };
-  const label = t(`portal.status.${status}`) || status;
+  const style = STATUS_CATEGORY_STYLES[category] ?? { class: 'badge-neutral', dot: 'var(--neutral)' };
+  // i18n by category when a translation exists, otherwise the configured name.
+  const key = `portal.status.${category}`;
+  const translated = t(key);
+  const label = translated === key ? name : translated;
   return (
-    <span className={`badge ${s.class}`}>
-      <span className="status-dot" style={{ background: s.dot }} />
+    <span className={`badge ${style.class}`}>
+      <span className="status-dot" style={{ background: style.dot }} />
       {label}
     </span>
   );
@@ -651,9 +659,9 @@ function TicketList({
 
   const filtered = tickets.filter((tk) => {
     if (filter === 'all') return true;
-    if (filter === 'open') return tk.status !== 'done' && tk.status !== 'cancelled';
-    if (filter === 'resolved') return tk.status === 'done';
-    if (filter === 'closed') return tk.status === 'cancelled';
+    if (filter === 'open') return tk.statusCategory !== 'resolved' && tk.statusCategory !== 'closed';
+    if (filter === 'resolved') return tk.statusCategory === 'resolved';
+    if (filter === 'closed') return tk.statusCategory === 'closed';
     return true;
   });
 
@@ -669,9 +677,9 @@ function TicketList({
             >
               {t(`portal.filter.${f}`)} <span className="count">({tickets.filter((tk) => {
                 if (f === 'all') return true;
-                if (f === 'open') return tk.status !== 'done' && tk.status !== 'cancelled';
-                if (f === 'resolved') return tk.status === 'done';
-                if (f === 'closed') return tk.status === 'cancelled';
+                if (f === 'open') return tk.statusCategory !== 'resolved' && tk.statusCategory !== 'closed';
+                if (f === 'resolved') return tk.statusCategory === 'resolved';
+                if (f === 'closed') return tk.statusCategory === 'closed';
                 return true;
               }).length})</span>
             </button>
@@ -709,7 +717,7 @@ function TicketList({
                   <td><span className="text-mono">{tk.id.slice(0, 8).toUpperCase()}</span></td>
                   <td><div style={{ fontWeight: 500 }}>{tk.title}</div></td>
                   <td className="hide-mobile"><TicketTypeBadge type={tk.ticketTypeId} /></td>
-                  <td><StatusBadge status={tk.status} /></td>
+                  <td><StatusBadge name={tk.statusName} category={tk.statusCategory} /></td>
                   <td><PriorityBadge priority={tk.priority} /></td>
                   <td className="text-muted text-small hide-mobile">{new Date(tk.updatedAt).toLocaleDateString()}</td>
                 </tr>
@@ -840,7 +848,7 @@ function AgentQueue({
                     <div style={{ fontWeight: 500 }}>{tk.title}</div>
                   </td>
                   <td className="hide-mobile">{tk.createdBy.slice(0, 8)}</td>
-                  <td><StatusBadge status={tk.status} /></td>
+                  <td><StatusBadge name={tk.statusName} category={tk.statusCategory} /></td>
                   <td><PriorityBadge priority={tk.priority} /></td>
                   <td className="hide-mobile">
                     {tk.assignedTo ? (
@@ -940,7 +948,7 @@ function TicketDetail({
         <div style={{ flex: 1, minWidth: 300 }}>
           <div className="flex items-center gap-3 mb-2 flex-wrap">
             <span className="text-mono text-muted">{ticket.id.slice(0, 8).toUpperCase()}</span>
-            <StatusBadge status={ticket.status} />
+            <StatusBadge name={ticket.statusName} category={ticket.statusCategory} />
             <TicketTypeBadge type={ticket.ticketTypeId} />
             <PriorityBadge priority={ticket.priority} />
             <VisibilityBadge visibility={ticket.visibility} />
@@ -1060,7 +1068,7 @@ function TicketDetail({
             <div className="card-body">
               <div className="info-row">
                 <span className="info-label">{t('portal.status_col')}</span>
-                <StatusBadge status={ticket.status} />
+                <StatusBadge name={ticket.statusName} category={ticket.statusCategory} />
               </div>
               <div className="info-row">
                 <span className="info-label">{t('portal.priority_col')}</span>

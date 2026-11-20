@@ -28,8 +28,17 @@ test.describe('P0-08 · Release E2E — Workspace isolation', () => {
       f.workspaceA.requesterSession,
     );
     expect(created.status).toBe(200);
-    const ticketA = created.data as { id: string };
+    const ticketA = created.data as {
+      id: string;
+      statusId: string;
+      statusName: string;
+      statusCategory: string;
+    };
     expect(ticketA.id).toBeDefined();
+    // S1/S2: the response carries the Workspace-configured Status, not an enum.
+    expect(ticketA.statusId).toBe(f.workspaceA.defaultStatusId);
+    expect(ticketA.statusName).toBe('New');
+    expect(ticketA.statusCategory).toBe('new');
 
     // Requester in B cannot see A's ticket in the list
     const listB = await apiGet(
@@ -189,16 +198,67 @@ test.describe('P0-08 · Release E2E — Ticket lifecycle', () => {
     );
     expect(reply.status).toBe(200);
 
-    // Agent transitions status to done
+    // Agent transitions the Ticket into the Workspace's resolved Status (S2)
     const updated = await apiPut(
       f.api,
       `/api/tickets/${ticket.id}`,
-      { status: 'done' },
+      { statusId: f.workspaceA.resolvedStatusId },
       f.workspaceA.agentSession,
     );
     expect(updated.status).toBe(200);
-    const updatedTicket = updated.data as { status: string };
-    expect(updatedTicket.status).toBe('done');
+    const updatedTicket = updated.data as {
+      statusId: string;
+      statusName: string;
+      statusCategory: string;
+    };
+    expect(updatedTicket.statusId).toBe(f.workspaceA.resolvedStatusId);
+    expect(updatedTicket.statusName).toBe('Resolved');
+    expect(updatedTicket.statusCategory).toBe('resolved');
+  });
+
+  test('Unknown Status ids are rejected on creation and transition', async () => {
+    const unknownStatusId = crypto.randomUUID();
+
+    const created = await apiPost(
+      f.api,
+      '/api/tickets',
+      {
+        title: 'Unknown status ticket',
+        ticketTypeId: f.workspaceA.ticketTypeId,
+        priorityId: f.workspaceA.priorityId,
+        statusId: unknownStatusId,
+      },
+      f.workspaceA.requesterSession,
+    );
+    expect(created.status).toBe(400);
+
+    const valid = await apiPost(
+      f.api,
+      '/api/tickets',
+      { title: 'Transition guard ticket', ticketTypeId: f.workspaceA.ticketTypeId, priorityId: f.workspaceA.priorityId },
+      f.workspaceA.requesterSession,
+    );
+    expect(valid.status).toBe(200);
+    const ticket = valid.data as { id: string };
+
+    const updated = await apiPut(
+      f.api,
+      `/api/tickets/${ticket.id}`,
+      { statusId: unknownStatusId },
+      f.workspaceA.agentSession,
+    );
+    expect(updated.status).toBe(400);
+
+    // The rejected transition left the Ticket in its original Status.
+    const reread = await apiGet(
+      f.api,
+      `/api/tickets/${ticket.id}`,
+      f.workspaceA.requesterSession,
+    );
+    expect(reread.status).toBe(200);
+    expect((reread.data as { statusId: string }).statusId).toBe(
+      f.workspaceA.defaultStatusId,
+    );
   });
 });
 

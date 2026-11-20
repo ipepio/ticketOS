@@ -10,6 +10,7 @@ import type {
   AuditEventKind,
   QueueId,
 } from '@ticketos/shared';
+import type { StatusCategory } from './workflow-configuration.js';
 
 // ---------------------------------------------------------------------------
 // Identity module seam
@@ -327,7 +328,10 @@ export interface AuditModule {
 // Ticket module seam (P0-04)
 // ---------------------------------------------------------------------------
 
-export type TicketStatus = 'backlog' | 'todo' | 'in_progress' | 'done' | 'cancelled';
+// S1/S2: a Ticket has no status enum of its own. Its Status is a row of the
+// Workspace-configured `statuses` table, referenced by id; `statusName` and
+// `statusCategory` are the resolved read model of that row so consumers never
+// need a second lookup or a hard-coded mapping.
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TicketVisibility = 'public' | 'internal' | 'private';
 
@@ -336,7 +340,12 @@ export interface Ticket {
   workspaceId: WorkspaceId;
   title: string;
   description: string | null;
-  status: TicketStatus;
+  /** The Workspace-configured Status this Ticket is in (S1, S2). */
+  statusId: string;
+  /** Display name of that Status, as configured in the Workspace. */
+  statusName: string;
+  /** Canonical Status Category of that Status (S5). */
+  statusCategory: StatusCategory;
   priority: TicketPriority;
   ticketTypeId: string | null;
   priorityId: string | null;
@@ -351,6 +360,12 @@ export interface CreateTicketInput {
   workspaceId: WorkspaceId;
   title: string;
   description?: string | null;
+  /**
+   * Active Status of this Workspace. When omitted the Workspace's default
+   * Status is used, else the first by sort_order. A Workspace with no active
+   * Status rejects the creation.
+   */
+  statusId?: string;
   priority?: TicketPriority;
   priorityId?: string | null;
   ticketTypeId?: string | null;
@@ -365,7 +380,8 @@ export interface UpdateTicketInput {
   id: string;
   title?: string;
   description?: string | null;
-  status?: TicketStatus;
+  /** New active Status of the Ticket's own Workspace. */
+  statusId?: string;
   priority?: TicketPriority;
   priorityId?: string | null;
   ticketTypeId?: string | null;
@@ -403,7 +419,7 @@ export interface TicketModule {
   updateTicket(input: UpdateTicketInput): Promise<Ticket>;
   deleteTicket(workspaceId: WorkspaceId, id: string): Promise<void>;
   listTickets(workspaceId: WorkspaceId, filters?: {
-    status?: TicketStatus;
+    statusId?: string;
     priority?: TicketPriority;
     assignedTo?: UserId | null;
     createdBy?: UserId;
@@ -434,8 +450,9 @@ export interface TicketModule {
 
   /**
    * Cancel a ticket. Only the ticket creator (Requester) can cancel
-   * their own eligible Service Request. Cancellation is terminal —
-   * the ticket status becomes 'cancelled' and cannot be transitioned.
+   * their own eligible Service Request. Cancellation is terminal — the
+   * Ticket moves to the Workspace's `closed` category Status and cannot
+   * be transitioned afterwards.
    */
   cancelTicket(workspaceId: WorkspaceId, ticketId: string, userId: UserId): Promise<Ticket>;
 }

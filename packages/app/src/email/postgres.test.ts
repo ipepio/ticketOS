@@ -113,6 +113,21 @@ const MIGRATIONS = [
     ticket_id UUID REFERENCES tickets(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  // Workspace-configured Statuses (S1, S5): email intake resolves the default
+  // Status instead of writing a hard-coded status string.
+  `CREATE TABLE IF NOT EXISTS status_categories (name TEXT PRIMARY KEY)`,
+  `INSERT INTO status_categories (name) VALUES ('new'), ('open'), ('pending'), ('resolved'), ('closed') ON CONFLICT DO NOTHING`,
+  `CREATE TABLE IF NOT EXISTS statuses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(workspace_id, name)
+  )`,
 ];
 
 let pool: Pool | null = null;
@@ -122,6 +137,7 @@ describe('Email module', () => {
   let userId: string;
   let wsId: string;
   let queueId: string;
+  let defaultStatusId: string;
 
   beforeAll(async () => {
     pool = new Pool({
@@ -165,6 +181,13 @@ describe('Email module', () => {
       [crypto.randomUUID(), wsId, 'Support Queue'],
     );
     queueId = queueRows[0]!.id;
+
+    const { rows: statusRows } = await pool!.query(
+      `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default)
+       VALUES ($1, 'New', 'new', 1, true) RETURNING id`,
+      [wsId],
+    );
+    defaultStatusId = statusRows[0]!.id;
 
     email = new PostgresEmail(pool!);
   });
@@ -335,6 +358,14 @@ describe('Email module', () => {
       const updated = await email.getQuarantineItem(item.id);
       expect(updated!.status).toBe('created_ticket');
       expect(updated!.ticketId).toBe(result.ticketId);
+
+      // S1: the intake Ticket starts in the Workspace's configured default
+      // Status, never a hard-coded status string.
+      const { rows: createdTicket } = await pool!.query(
+        'SELECT status_id FROM tickets WHERE id = $1',
+        [result.ticketId],
+      );
+      expect(createdTicket[0]!.status_id).toBe(defaultStatusId);
     });
 
     it('links a ticket to quarantine', async () => {

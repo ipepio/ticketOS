@@ -10,6 +10,7 @@ import type {
   IntakeQuarantineItem,
 } from '@ticketos/domain';
 import type { UserId, WorkspaceId } from '@ticketos/shared';
+import { resolveDefaultStatus } from '../ticket/postgres.js';
 import crypto from 'node:crypto';
 
 export class PostgresEmail implements EmailModule {
@@ -264,12 +265,17 @@ export class PostgresEmail implements EmailModule {
     const item = await this.getQuarantineItem(quarantineId);
     if (!item) throw new Error(`Quarantine item not found: ${quarantineId}`);
 
+    // S1: email intake starts the Ticket in the Workspace's configured default
+    // Status, exactly like the interactive creation path — no 'backlog' literal
+    // and no second status model.
+    const status = await resolveDefaultStatus(this.pool, item.workspaceId);
+
     // Create ticket from quarantine item
     const { rows } = await this.pool.query(
-      `INSERT INTO tickets (workspace_id, title, description, status, priority, created_by, visibility, created_at, updated_at)
-       VALUES ($1, $2, $3, 'backlog', 'normal', $4, 'public', NOW(), NOW())
+      `INSERT INTO tickets (workspace_id, title, description, status_id, priority, created_by, visibility, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'normal', $5, 'public', NOW(), NOW())
        RETURNING id`,
-      [item.workspaceId, item.subject, item.textBody, userId],
+      [item.workspaceId, item.subject, item.textBody, status.id, userId],
     );
     const ticketId = rows[0]!.id;
 

@@ -383,15 +383,19 @@ export class PostgresWorkspace implements WorkspaceModule {
   }
 
   async listQueues(workspaceId: WorkspaceId): Promise<QueueDetail[]> {
+    // Active Ticket count: the Ticket is in a Status whose canonical category is
+    // neither resolved nor closed (S5). Status resolution comes from Workspace
+    // configuration, so there is no hard-coded status string here.
     const { rows } = await this.pool.query(
       `SELECT q.id, q.name, q.access_mode,
               COUNT(qm.id)::int AS member_count,
-              COUNT(t.id)::int AS ticket_count
+              COUNT(t.id) FILTER (
+                WHERE s.category NOT IN ('resolved', 'closed')
+              )::int AS ticket_count
        FROM queues q
        LEFT JOIN queue_members qm ON qm.queue_id = q.id
        LEFT JOIN tickets t ON t.queue_id = q.id
-         AND t.status != 'cancelled'
-         AND t.status IN ('backlog', 'todo', 'in_progress')
+       LEFT JOIN statuses s ON s.id = t.status_id
        WHERE q.workspace_id = $1
        GROUP BY q.id
        ORDER BY q.created_at`,

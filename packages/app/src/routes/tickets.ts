@@ -45,9 +45,16 @@ export async function registerTicketRoutes(
       assignedTo?: string;
     };
 
+    // S1/S2: `?status=` now carries the Workspace-configured Status id.
+    if (status !== undefined && status !== '') {
+      if (!z.string().uuid().safeParse(status).success) {
+        return reply.status(400).send({ error: 'Invalid Status id format' });
+      }
+    }
+
     const ticketModule = getTicket();
     const tickets = await ticketModule.listTickets(workspaceId, {
-      status: status as any,
+      statusId: status || undefined,
       priority: priority as any,
       assignedTo: assignedTo || null,
     });
@@ -158,6 +165,7 @@ export async function registerTicketRoutes(
       priority?: string;
       priorityId?: string;
       ticketTypeId?: string;
+      statusId?: string;
       assignedTo?: string;
     };
 
@@ -193,6 +201,18 @@ export async function registerTicketRoutes(
       }
     }
 
+    // Validate & resolve statusId (S1, S2)
+    if (body.statusId !== undefined) {
+      if (!z.string().uuid().safeParse(body.statusId).success) {
+        return reply.status(400).send({ error: 'Invalid statusId format' });
+      }
+      if (!config.statuses.some(s => s.id === body.statusId)) {
+        return reply.status(400).send({
+          error: 'Status not found or inactive', code: 'not-found',
+        });
+      }
+    }
+
     // Resolve defaults for missing IDs (S5 — active default per Workspace)
     const resolvedTicketTypeId = body.ticketTypeId
       ?? config.ticketTypes.find(t => t.isDefault)?.id
@@ -223,6 +243,7 @@ export async function registerTicketRoutes(
         workspaceId,
         title: body.title,
         description: body.description ?? null,
+        statusId: body.statusId,
         priority: (body.priority as any) ?? 'normal',
         priorityId: resolvedPriorityId,
         ticketTypeId: resolvedTicketTypeId,
@@ -282,7 +303,7 @@ export async function registerTicketRoutes(
     const body = request.body as {
       title?: string;
       description?: string;
-      status?: string;
+      statusId?: string;
       priority?: string;
       priorityId?: string;
       assignedTo?: string;
@@ -303,17 +324,34 @@ export async function registerTicketRoutes(
       return reply.status(403).send({ error: 'Access denied' });
     }
 
-    const updated = await ticketModule.updateTicket({
-      id: ticket.id,
-      title: body.title,
-      description: body.description,
-      status: body.status as any,
-      priority: body.priority as any,
-      priorityId: body.priorityId ?? undefined,
-      assignedTo: body.assignedTo,
-    });
+    // S2: the status change is a Workspace-configured Status id.
+    if (body.statusId !== undefined) {
+      if (!z.string().uuid().safeParse(body.statusId).success) {
+        return reply.status(400).send({ error: 'Invalid statusId format' });
+      }
+    }
 
-    return reply.send(updated);
+    try {
+      const updated = await ticketModule.updateTicket({
+        id: ticket.id,
+        title: body.title,
+        description: body.description,
+        statusId: body.statusId,
+        priority: body.priority as any,
+        priorityId: body.priorityId ?? undefined,
+        assignedTo: body.assignedTo,
+      });
+
+      return reply.send(updated);
+    } catch (err) {
+      if (err instanceof ConfigurationNotFoundError) {
+        return reply.status(400).send({
+          error: err.message,
+          code: err.code,
+        });
+      }
+      throw err;
+    }
   });
 
   // GET /api/tickets/:id/timeline — get timeline entries

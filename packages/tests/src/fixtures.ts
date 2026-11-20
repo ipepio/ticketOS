@@ -28,6 +28,9 @@ export interface TestWorkspace {
   restrictedQueueId: string;
   ticketTypeId: string;
   priorityId: string;
+  defaultStatusId: string;
+  resolvedStatusId: string;
+  closedStatusId: string;
 }
 
 export interface TestFixtures {
@@ -236,6 +239,28 @@ async function buildWorkspace(
   );
   const priorityId = priorityRows[0].id;
 
+  // S1/S2: Ticket status lives in Workspace-configured Statuses. A Workspace
+  // without Statuses cannot create Tickets, so every fixture Workspace gets the
+  // canonical set.
+  const insertStatus = async (
+    name: string,
+    category: 'new' | 'open' | 'pending' | 'resolved' | 'closed',
+    sortOrder: number,
+    isDefault: boolean,
+  ): Promise<string> => {
+    const { rows } = await pool.query(
+      `INSERT INTO statuses (workspace_id, name, category, sort_order, is_default, is_active)
+       VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
+      [workspaceId, name, category, sortOrder, isDefault],
+    );
+    return rows[0].id;
+  };
+  const defaultStatusId = await insertStatus('New', 'new', 1, true);
+  await insertStatus('Open', 'open', 2, false);
+  await insertStatus('Pending', 'pending', 3, false);
+  const resolvedStatusId = await insertStatus('Resolved', 'resolved', 4, false);
+  const closedStatusId = await insertStatus('Closed', 'closed', 5, false);
+
   const adminSession = await createSession(pool, adminUserId, workspaceId);
   const agentSession = await createSession(pool, agentUserId, workspaceId);
   const requesterSession = await createSession(
@@ -260,6 +285,9 @@ async function buildWorkspace(
     restrictedQueueId,
     ticketTypeId,
     priorityId,
+    defaultStatusId,
+    resolvedStatusId,
+    closedStatusId,
   };
 }
 
@@ -280,7 +308,6 @@ const CLEANABLE_TABLES = [
   'ticket_tags',
   'ticket_types',
   'tickets',
-  'status_categories',
   'statuses',
   'transitions',
   'queue_members',
@@ -317,6 +344,13 @@ export async function cleanDatabase(pool: Pool): Promise<void> {
 export async function setupFixtures(): Promise<TestFixtures> {
   const p = await getPool();
   await cleanDatabase(p);
+  // `status_categories` is reference data seeded by migration 003 and is not
+  // truncated by cleanDatabase, so it survives here. Re-seeding keeps the suite
+  // independent from the state of the database it was pointed at.
+  await p.query(
+    `INSERT INTO status_categories (name) VALUES ('new'), ('open'), ('pending'), ('resolved'), ('closed')
+     ON CONFLICT DO NOTHING`,
+  );
 
   const api = await pwRequest.newContext({
     baseURL: BASE_URL,
