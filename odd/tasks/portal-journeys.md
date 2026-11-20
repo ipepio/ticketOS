@@ -42,7 +42,7 @@ request a magic link." / "18. An active session remains authenticated after rene
 | --- | --- | --- | --- |
 | T1 | S1, S5 (slice 19) | worker: landing page with "Open a Ticket" + post-login destination preservation; e2e journey | 025e270 |
 | T2 | S2, S5 (slices 18) | worker: session renewal (server expiry + cookie max-age refresh on activity), logout invalidation, expired-session redirect preserving destination; e2e journeys | 19bff79 (pinning: behavior already satisfied) |
-| T3 | S3, S5 (slice 17) | worker: members/org admin journeys in the portal + magic-link eligibility for external Requesters; e2e journeys | — |
+| T3 | S3, S5 (slice 17) | worker: members/org admin journeys in the portal + magic-link eligibility for external Requesters; e2e journeys | 344ba30 |
 
 ## Log
 
