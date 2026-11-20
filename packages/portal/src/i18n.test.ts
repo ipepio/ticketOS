@@ -19,6 +19,13 @@ describe('resolveInitialLocale', () => {
     expect(resolveInitialLocale(null, ['es-ES'])).toBe('es');
     expect(resolveInitialLocale(null, ['en-US'])).toBe('en');
     expect(resolveInitialLocale('ru', ['en'])).toBe('en');
+    expect(resolveInitialLocale('xx', [])).toBe('en');
+  });
+
+  it('stored value wins over every browser preference and an empty browser list', () => {
+    expect(resolveInitialLocale('es', ['en-US', 'en-GB'])).toBe('es');
+    expect(resolveInitialLocale('es', [])).toBe('es');
+    expect(resolveInitialLocale('en', ['es-ES', 'es-MX'])).toBe('en');
   });
 
   it('matches es and es-* from browser languages', () => {
@@ -58,6 +65,7 @@ describe('resolveInitialLocale', () => {
 
   it('falls back to English when no browser languages', () => {
     expect(resolveInitialLocale(null, [])).toBe('en');
+    expect(resolveInitialLocale(null, [''])).toBe('en');
   });
 
   it('first supported browser language wins', () => {
