@@ -567,8 +567,10 @@ test.describe('Configured installation — no setup form, normal session behavio
   });
 
   // S2 — "On a configured Installation, the setup form is not rendered and normal
-  // authentication/session behavior remains available."
-  test('setup form is not rendered and unauthenticated visitors get the login page', async ({
+  // authentication/session behavior remains available." Since the landing feature,
+  // an unauthenticated visitor at / sees the support landing; authentication is
+  // reachable through its "Open a Ticket" action.
+  test('setup form is not rendered and unauthenticated visitors reach authentication from the landing', async ({
     browser,
   }) => {
     const context = await browser.newContext({ locale: 'en-US' });
@@ -576,13 +578,19 @@ test.describe('Configured installation — no setup form, normal session behavio
       const page = await context.newPage();
       await page.goto(CONFIGURED_URL, { waitUntil: 'domcontentloaded' });
 
+      await expect(page.getByTestId('landing-page')).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(page.getByTestId('setup-wizard')).toHaveCount(0);
+      await expect(page.locator('#ws-name')).toHaveCount(0);
+      await expect(page.getByTestId('sidebar')).toHaveCount(0);
+
+      // The landing CTA leads to the authentication card.
+      await page.getByRole('button', { name: 'Open a Ticket' }).click();
       await expect(page.getByTestId('login-page')).toBeVisible({
         timeout: 30_000,
       });
       await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
-      await expect(page.getByTestId('setup-wizard')).toHaveCount(0);
-      await expect(page.locator('#ws-name')).toHaveCount(0);
-      await expect(page.getByTestId('sidebar')).toHaveCount(0);
     } finally {
       await context.close();
     }
