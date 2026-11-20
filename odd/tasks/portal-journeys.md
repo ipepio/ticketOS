@@ -40,7 +40,7 @@ request a magic link." / "18. An active session remains authenticated after rene
 
 | ID | Spec | Route | Commit |
 | --- | --- | --- | --- |
-| T1 | S1, S5 (slice 19) | worker: landing page with "Open a Ticket" + post-login destination preservation; e2e journey | — |
+| T1 | S1, S5 (slice 19) | worker: landing page with "Open a Ticket" + post-login destination preservation; e2e journey | 025e270 |
 | T2 | S2, S5 (slices 18) | worker: session renewal (server expiry + cookie max-age refresh on activity), logout invalidation, expired-session redirect preserving destination; e2e journeys | — |
 | T3 | S3, S5 (slice 17) | worker: members/org admin journeys in the portal + magic-link eligibility for external Requesters; e2e journeys | — |
 
@@ -53,3 +53,10 @@ the admin feature) but the magic-link eligibility journey (17) and the durable-s
 behaviors (18) were never covered by browser tests, and there is no landing page — the portal
 routes `/` to login when unauthenticated. REST seams exist: /api/auth/magic-link (issue),
 /api/auth/verify (exchange), /api/auth/session, /api/auth/logout.
+
+L3 (T1 evidence, worker + parent gates): commit 025e270 — landing page + Open a Ticket CTA, post-login
+destination consumed once from a fixed page allowlist (localStorage, cleared on logout), unknown-email
+response no longer leaks membership existence (auth.ts) + localized generic feedback, 4 new i18n keys in
+all 9 locales, 5 new browser journeys (landing-journey.spec.ts). Parent cleanup in the same unit: dead
+SetupWizard state/bindings and unused verify result removed. Gates: Playwright 34/34, app 230/230,
+portal 13/13, typecheck 0, lint 0.
