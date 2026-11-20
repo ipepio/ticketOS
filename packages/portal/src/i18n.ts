@@ -40,6 +40,12 @@ const en: Record<string, string> = {
   'portal.send_magic_link': 'Send magic link',
   'portal.magic_link_sent': 'Magic link sent to {email}. Check your inbox.',
   'portal.login_failed': 'Login failed',
+  'portal.magic_link_error': 'We could not send the link. Please try again in a moment.',
+
+  // Support landing (S1) — the first thing an unauthenticated visitor sees
+  'portal.landing_title': 'Support, without the runaround',
+  'portal.landing_tagline': 'Open a ticket and our team takes it from there.',
+  'portal.open_ticket': 'Open a Ticket',
   'portal.select_workspace': 'Select Workspace',
   'portal.no_workspaces': 'No workspaces available. Contact your administrator.',
 
@@ -272,6 +278,12 @@ const es: Record<string, string> = {
   'portal.send_magic_link': 'Enviar enlace mágico',
   'portal.magic_link_sent': 'Enlace mágico enviado a {email}. Revise su bandeja de entrada.',
   'portal.login_failed': 'Error al iniciar sesión',
+  'portal.magic_link_error': 'No pudimos enviar el enlace. Inténtalo de nuevo en un momento.',
+
+  // Landing de soporte (S1)
+  'portal.landing_title': 'Soporte, sin complicaciones',
+  'portal.landing_tagline': 'Abre un ticket y nuestro equipo se encarga del resto.',
+  'portal.open_ticket': 'Abrir un Ticket',
   'portal.select_workspace': 'Seleccionar Espacio de trabajo',
   'portal.no_workspaces': 'No hay espacios de trabajo disponibles. Contacte a su administrador.',
 
@@ -499,6 +511,12 @@ const fr: Record<string, string> = {
   'portal.send_magic_link': 'Envoyer le lien magique',
   'portal.magic_link_sent': 'Lien magique envoyé à {email}. Vérifiez votre boîte de réception.',
   'portal.login_failed': 'Échec de connexion',
+  'portal.magic_link_error': "Nous n'avons pas pu envoyer le lien. Réessayez dans un instant.",
+
+  // Page d'accueil du support (S1)
+  'portal.landing_title': 'Le support, sans détour',
+  'portal.landing_tagline': "Ouvrez un ticket et notre équipe s'occupe du reste.",
+  'portal.open_ticket': 'Ouvrir un ticket',
   'portal.select_workspace': "Sélectionner l'espace de travail",
   'portal.no_workspaces': "Aucun espace de travail disponible. Contactez votre administrateur.",
 
@@ -709,6 +727,12 @@ const de: Record<string, string> = {
   'portal.send_magic_link': 'Magischen Link senden',
   'portal.magic_link_sent': 'Magischer Link an {email} gesendet. Überprüfen Sie Ihren Posteingang.',
   'portal.login_failed': 'Anmeldung fehlgeschlagen',
+  'portal.magic_link_error': 'Wir konnten den Link nicht senden. Bitte versuchen Sie es gleich noch einmal.',
+
+  // Support-Startseite (S1)
+  'portal.landing_title': 'Support ohne Umwege',
+  'portal.landing_tagline': 'Öffnen Sie ein Ticket – unser Team übernimmt den Rest.',
+  'portal.open_ticket': 'Ticket öffnen',
   'portal.select_workspace': 'Arbeitsbereich auswählen',
   'portal.no_workspaces': 'Keine Arbeitsbereiche verfügbar. Kontaktieren Sie Ihren Administrator.',
 
@@ -917,6 +941,12 @@ const pt: Record<string, string> = {
   'portal.send_magic_link': 'Enviar link mágico',
   'portal.magic_link_sent': 'Link mágico enviado para {email}. Verifique sua caixa de entrada.',
   'portal.login_failed': 'Falha ao entrar',
+  'portal.magic_link_error': 'Não foi possível enviar o link. Tente novamente em instantes.',
+
+  // Página inicial de suporte (S1)
+  'portal.landing_title': 'Suporte, sem complicações',
+  'portal.landing_tagline': 'Abra um ticket e nossa equipe cuida do resto.',
+  'portal.open_ticket': 'Abrir um ticket',
   'portal.select_workspace': 'Selecionar espaço de trabalho',
   'portal.no_workspaces': 'Nenhum espaço de trabalho disponível. Entre em contato com seu administrador.',
 
@@ -1116,6 +1146,12 @@ const it: Record<string, string> = {
   'portal.send_magic_link': 'Invia link magico',
   'portal.magic_link_sent': 'Link magico inviato a {email}. Controlla la tua casella di posta.',
   'portal.login_failed': 'Accesso fallito',
+  'portal.magic_link_error': 'Non siamo riusciti a inviare il link. Riprova tra un istante.',
+
+  // Pagina iniziale di supporto (S1)
+  'portal.landing_title': 'Supporto, senza giri di parole',
+  'portal.landing_tagline': 'Apri un ticket e il nostro team si occupa del resto.',
+  'portal.open_ticket': 'Apri un ticket',
   'portal.select_workspace': 'Seleziona spazio di lavoro',
   'portal.no_workspaces': 'Nessuno spazio di lavoro disponibile. Contatta il tuo amministratore.',
 
@@ -1295,6 +1331,12 @@ const nl: Record<string, string> = {
   'portal.send_magic_link': 'Magische link versturen',
   'portal.magic_link_sent': 'Magische link verstuurd naar {email}. Controleer je inbox.',
   'portal.login_failed': 'Inloggen mislukt',
+  'portal.magic_link_error': 'We konden de link niet versturen. Probeer het in een ogenblik opnieuw.',
+
+  // Support-startpagina (S1)
+  'portal.landing_title': 'Support, zonder omwegen',
+  'portal.landing_tagline': 'Open een ticket en ons team pakt het op.',
+  'portal.open_ticket': 'Ticket openen',
   'portal.select_workspace': 'Werkruimte selecteren',
   'portal.no_workspaces': 'Geen werkruimtes beschikbaar. Neem contact op met je beheerder.',
 
@@ -1471,6 +1513,12 @@ const ja: Record<string, string> = {
   'portal.send_magic_link': 'マジックリンクを送信',
   'portal.magic_link_sent': 'マジックリンクを {email} に送信しました。受信箱を確認してください。',
   'portal.login_failed': 'ログイン失敗',
+  'portal.magic_link_error': 'リンクを送信できませんでした。しばらくしてからもう一度お試しください。',
+
+  // サポートのランディングページ (S1)
+  'portal.landing_title': 'サポートを、もっとシンプルに',
+  'portal.landing_tagline': 'チケットを作成すれば、あとはサポートチームが対応します。',
+  'portal.open_ticket': 'チケットを作成',
   'portal.select_workspace': 'ワークスペースを選択',
   'portal.no_workspaces': '利用可能なワークスペースがありません。管理者にお問い合わせください。',
 
@@ -1650,6 +1698,12 @@ const zh: Record<string, string> = {
   'portal.send_magic_link': '发送登录链接',
   'portal.magic_link_sent': '登录链接已发送到 {email}，请查收。',
   'portal.login_failed': '登录失败',
+  'portal.magic_link_error': '链接发送失败，请稍后重试。',
+
+  // 支持落地页 (S1)
+  'portal.landing_title': '支持，无需绕路',
+  'portal.landing_tagline': '提交工单，我们的团队会接手处理。',
+  'portal.open_ticket': '创建工单',
   'portal.select_workspace': '选择工作区',
   'portal.no_workspaces': '没有可用的工作区，请联系管理员。',
 

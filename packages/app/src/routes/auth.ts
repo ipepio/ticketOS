@@ -61,9 +61,10 @@ export async function registerAuthRoutes(
     }
 
     if (!workspaceId) {
-      return reply.status(404).send({
-        error: 'No Workspace Membership found for this email address',
-      });
+      // S1 — the response must never reveal whether Workspace Memberships exist
+      // for this address, so a known and an unknown email look identical here.
+      fastify.log.info({ email: body.email }, 'Magic link request ignored: no Workspace Membership');
+      return reply.send({ message: 'Magic link sent' });
     }
 
     try {

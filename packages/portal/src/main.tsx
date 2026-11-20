@@ -421,8 +421,11 @@ function Login({ onLogin }: { onLogin: (_user: User, _workspace: Workspace) => v
         body: JSON.stringify({ email }),
       });
       setMessage(t('portal.magic_link_sent', { email }));
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('portal.login_failed'));
+    } catch {
+      // Never echo the server message. The same neutral copy must cover an
+      // unknown address and a delivery failure, so the form cannot reveal
+      // whether Workspace Memberships exist for the email.
+      setError(t('portal.magic_link_error'));
     } finally {
       setLoading(false);
     }
@@ -471,6 +474,45 @@ function Login({ onLogin }: { onLogin: (_user: User, _workspace: Workspace) => v
 
         {message && <p className="mt-4 text-center text-small" style={{ color: 'var(--success)' }} data-testid="login-message" role="status">{message}</p>}
         {error && <p className="mt-4 text-center text-small" style={{ color: 'var(--danger)' }} data-testid="login-error" role="alert">{error}</p>}
+
+        <div className="divider" />
+
+        <div className="flex justify-center items-center gap-2 mt-4">
+          <LocaleSwitcher />
+        </div>
+      </div>
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Support Landing (unauthenticated)
+// ---------------------------------------------------------------------------
+
+function Landing({ onOpenTicket }: { onOpenTicket: () => void }) {
+  const { t } = useI18n();
+  return (
+    <main className="auth-page" data-testid="landing-page">
+      <div className="auth-card landing-card">
+        <div className="auth-brand">
+          <div className="logo">T</div>
+          <div className="brand-name">ticket<span className="os">OS</span></div>
+        </div>
+
+        <h1 className="auth-title">{t('portal.landing_title')}</h1>
+        <p className="auth-subtitle" data-testid="landing-tagline">
+          {t('portal.landing_tagline')}
+        </p>
+
+        <button
+          type="button"
+          className="btn btn-primary btn-block btn-lg"
+          onClick={onOpenTicket}
+          data-testid="open-ticket-btn"
+        >
+          <IconTicket size={18} />
+          {t('portal.open_ticket')}
+        </button>
 
         <div className="divider" />
 
@@ -1426,15 +1468,14 @@ function browserTimeZone(): string {
   }
 }
 
-function SetupWizard({ onComplete }: { onComplete: () => void }) {
-  const { t, locale, setLocale } = useI18n();
+function SetupWizard() {
+  const { t, locale } = useI18n();
   const [workspaceName, setWorkspaceName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminName, setAdminName] = useState('');
   const [timezone, setTimezone] = useState(browserTimeZone);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1517,7 +1558,6 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           </button>
         </form>
 
-        {success && <p className="mt-4 text-center text-small" style={{ color: 'var(--success)' }}>{success}</p>}
         {error && <p className="mt-4 text-center text-small" style={{ color: 'var(--danger)' }} role="alert">{error}</p>}
 
         <div className="divider" />
@@ -1536,6 +1576,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 type Page =
   | 'loading'
   | 'setup'
+  | 'landing'
   | 'login'
   | 'workspace-select'
   | 'ticket-list'
@@ -1547,6 +1588,57 @@ type Page =
   | 'admin-members'
   | 'admin-organizations'
   | 'admin-statuses';
+
+// ---------------------------------------------------------------------------
+// Safe post-login destination
+// ---------------------------------------------------------------------------
+
+// The only pages an unauthenticated visitor may be returned to after signing
+// in. This is a fixed allowlist of internal Page values: there is no URL-based
+// routing, so no URL string is ever stored, validated or navigated to.
+const POST_LOGIN_DESTINATIONS = ['create-ticket'] as const;
+type PostLoginDestination = (typeof POST_LOGIN_DESTINATIONS)[number];
+const POST_LOGIN_DESTINATION_KEY = 'ticketos-post-login-destination';
+
+function isPostLoginDestination(value: string | null): value is PostLoginDestination {
+  return value !== null && (POST_LOGIN_DESTINATIONS as readonly string[]).includes(value);
+}
+
+/** Record where an authenticated-only action should land once the User signs in. */
+function rememberPostLoginDestination(destination: PostLoginDestination): void {
+  try {
+    // localStorage (not sessionStorage): a magic link can complete in a new tab.
+    localStorage.setItem(POST_LOGIN_DESTINATION_KEY, destination);
+  } catch {
+    // Storage unavailable: the sign-in still works, it just lands on the
+    // default Workspace page.
+  }
+}
+
+/** Read and clear the recorded destination, so it is used exactly once. */
+function consumePostLoginDestination(): PostLoginDestination | null {
+  try {
+    const stored = localStorage.getItem(POST_LOGIN_DESTINATION_KEY);
+    if (stored === null) return null;
+    localStorage.removeItem(POST_LOGIN_DESTINATION_KEY);
+    return isPostLoginDestination(stored) ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function forgetPostLoginDestination(): void {
+  try {
+    localStorage.removeItem(POST_LOGIN_DESTINATION_KEY);
+  } catch {
+    // Storage unavailable — nothing to forget.
+  }
+}
+
+/** The page an authenticated User lands on inside their active Workspace. */
+function workspaceHomePage(role: string | undefined): Page {
+  return role === 'agent' || role === 'workspace-admin' ? 'queue' : 'ticket-list';
+}
 
 function AppContent() {
   const { t, locale } = useI18n();
@@ -1578,7 +1670,7 @@ function AppContent() {
       if (tokenParam) {
         try {
           // Exchange token for session
-          const verified = await api<{ userId: string; workspaceId?: string }>('/api/auth/verify', {
+          await api('/api/auth/verify', {
             method: 'POST',
             body: JSON.stringify({ token: tokenParam }),
           });
@@ -1609,9 +1701,11 @@ function AppContent() {
               return;
             }
           } catch {
-            // If setup endpoint fails, just show login
+            // If setup endpoint fails, just show the landing page
           }
-          setPage('login');
+          // S1 — a configured Installation greets visitors with the support
+          // landing page, not the raw login form.
+          setPage('landing');
           return;
         }
 
@@ -1633,7 +1727,10 @@ function AppContent() {
 
         if (targetWs) {
           setWorkspace(targetWs);
-          setPage(targetWs.role === 'agent' || targetWs.role === 'workspace-admin' ? 'queue' : 'ticket-list');
+          // S5 slice 19 — an authenticated User whose pre-login intent was to
+          // create a Ticket lands on the creation form; every other visit keeps
+          // the normal Workspace page.
+          setPage(consumePostLoginDestination() ?? workspaceHomePage(targetWs.role));
         } else {
           setPage('workspace-select');
         }
@@ -1665,12 +1762,19 @@ function AppContent() {
   const handleLogin = useCallback((_user: User, ws: Workspace) => {
     setUser(_user);
     setWorkspace(ws);
-    setPage(ws.role === 'agent' || ws.role === 'workspace-admin' ? 'queue' : 'ticket-list');
+    setPage(consumePostLoginDestination() ?? workspaceHomePage(ws.role));
   }, []);
 
   const handleWorkspaceSelect = useCallback((ws: Workspace) => {
     setWorkspace(ws);
-    setPage(ws.role === 'agent' || ws.role === 'workspace-admin' ? 'queue' : 'ticket-list');
+    setPage(consumePostLoginDestination() ?? workspaceHomePage(ws.role));
+  }, []);
+
+  // S1 — the landing CTA is the only way into authentication for a visitor who
+  // asked for a Ticket, so it records that intent before showing the login card.
+  const handleStartTicketIntake = useCallback(() => {
+    rememberPostLoginDestination('create-ticket');
+    setPage('login');
   }, []);
 
   const handleOpenTicket = useCallback(async (id: string) => {
@@ -1726,6 +1830,7 @@ function AppContent() {
     try {
       await api('/api/auth/logout', { method: 'POST' });
     } catch { /* ignore */ }
+    forgetPostLoginDestination();
     setUser(null);
     setWorkspace(null);
     setAvailableWorkspaces([]);
@@ -1734,9 +1839,11 @@ function AppContent() {
 
   const isAgent = workspace?.role === 'agent' || workspace?.role === 'workspace-admin';
   // Pre-auth states render without the authenticated shell: setup is a
-  // dedicated full-page experience with no Workspace/session context.
+  // dedicated full-page experience with no Workspace/session context, and the
+  // landing page belongs to visitors who have no session yet.
   const showShell =
-    page !== 'loading' && page !== 'setup' && page !== 'login' && page !== 'workspace-select';
+    page !== 'loading' && page !== 'setup' && page !== 'landing' &&
+    page !== 'login' && page !== 'workspace-select';
 
   return (
     <div className="app" data-testid="app-root">
@@ -1791,7 +1898,8 @@ function AppContent() {
             </div>
           </main>
         )}
-        {page === 'setup' && <SetupWizard onComplete={() => window.location.reload()} />}
+        {page === 'setup' && <SetupWizard />}
+        {page === 'landing' && <Landing onOpenTicket={handleStartTicketIntake} />}
         {page === 'login' && <Login onLogin={handleLogin} />}
         {page === 'workspace-select' && (
           <WorkspaceSelector
@@ -1838,7 +1946,7 @@ function AppContent() {
                 method: 'POST',
                 body: JSON.stringify({ title, description, ticketTypeId, priorityId }),
               });
-              setPage(workspace?.role === 'agent' || workspace?.role === 'workspace-admin' ? 'queue' : 'ticket-list');
+              setPage(workspaceHomePage(workspace?.role));
             }}
             onBack={() => setPage(isAgent ? 'queue' : 'ticket-list')}
           />

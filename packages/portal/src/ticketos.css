@@ -216,6 +216,9 @@ img, svg { display: block; max-width: 100%; }
 .auth-title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin-bottom: var(--sp-2); }
 .auth-subtitle { font-size: 14px; color: var(--muted); margin-bottom: var(--sp-6); }
 
+/* Support landing (S1) — the pre-authentication entry point. */
+.landing-card { max-width: 440px; }
+
 /* ---------- 6. Buttons ---------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
